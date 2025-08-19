@@ -51,6 +51,11 @@ public sealed class Server(ServerOptions options) : IDisposable
                 using var result = await _socket.ReceiveAsync(cancellationToken).ConfigureAwait(false);
                 var remoteEndpoint = result.RemoteEndPoint;
                 var buffer = result.Buffer;
+
+                if (PacketDecoder.TryDecode(buffer, out var packet))
+                {
+                    Console.WriteLine($"{remoteEndpoint}: {packet.Header.Type}");
+                }
             }
             catch (OperationCanceledException)
             {
