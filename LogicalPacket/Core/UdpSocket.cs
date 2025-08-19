@@ -22,6 +22,13 @@ public sealed class UdpSocket : IDisposable
         _socket.Bind(new IPEndPoint(IPAddress.IPv6Any, port));
     }
 
+    public ValueTask<int> SendAsync(ReadOnlyMemory<byte> datagram, IPEndPoint endPoint, CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+
+        return _socket.SendToAsync(datagram, SocketFlags.None, endPoint, cancellationToken);
+    }
+
     public async ValueTask<UdpReceiveResult> ReceiveAsync(CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
