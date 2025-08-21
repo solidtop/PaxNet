@@ -1,30 +1,31 @@
-﻿using System.Net.Sockets;
+﻿using System.Buffers;
+using System.Net;
+using System.Net.Sockets;
 
 namespace LogicalPacket.Core;
 
-public sealed class Server(ServerOptions options) : IDisposable
+public sealed class Server : IDisposable
 {
-    private readonly ServerOptions _options = options;
-    private readonly UdpSocket _socket = new(options.Port);
-    private readonly CancellationTokenSource _cts = new();
+    private const int MaxUdpSize = 1500;
 
+    private readonly UdpSocket _socket = new();
     private bool _isRunning;
+
+    private CancellationTokenSource? _cts;
     private Task? _receiveTask;
 
-    public void Start()
+    public void Start(int port)
     {
         if (_isRunning)
             return;
 
         _isRunning = true;
 
-        _receiveTask = Task.Run(() => ReceiveAsync(_cts.Token), _cts.Token);
+        _socket.Bind(new IPEndPoint(IPAddress.Any, port));
+        _cts = new CancellationTokenSource();
+        _receiveTask = Task.Run(() => ReceiveLoopAsync(_cts.Token));
 
-        Console.WriteLine($"Server started on port {_options.Port}... Press enter to stop.");
-
-        Console.ReadLine();
-
-        Stop();
+        Console.WriteLine($"Server started on port {port}...");
     }
 
     public void Stop()
@@ -32,29 +33,33 @@ public sealed class Server(ServerOptions options) : IDisposable
         if (!_isRunning)
             return;
 
-        Console.WriteLine("Server shutting down...");
-
         _isRunning = false;
 
-        _cts.Cancel();
+        Console.WriteLine("Server shutting down...");
 
-        _receiveTask?.GetAwaiter().GetResult();
-        _cts.Dispose();
+        _cts?.Cancel();
+        _receiveTask?.Wait();
+        _cts?.Dispose();
+        _cts = null;
+        _receiveTask = null;
     }
 
-    private async Task ReceiveAsync(CancellationToken cancellationToken)
+    private async Task ReceiveLoopAsync(CancellationToken cancellationToken)
     {
+        var rented = ArrayPool<byte>.Shared.Rent(MaxUdpSize);
+        var memory = rented.AsMemory();
+
         while (_isRunning && !cancellationToken.IsCancellationRequested)
         {
             try
             {
-                using var result = await _socket.ReceiveAsync(cancellationToken).ConfigureAwait(false);
-                var remoteEndpoint = result.RemoteEndPoint;
-                var buffer = result.Buffer;
+                var result = await _socket.ReceiveAsync(memory, cancellationToken).ConfigureAwait(false);
+                var remote = (IPEndPoint)result.RemoteEndPoint;
+                var buffer = memory[..result.ReceivedBytes];
 
-                if (PacketDecoder.TryDecode(buffer, out var packet))
+                if (PacketCodec.TryDecode(buffer, out var packet))
                 {
-                    Console.WriteLine($"{remoteEndpoint}: {packet.Header.Type}");
+                    Console.WriteLine($"Packet received of type: {packet.Header.Type}");
                 }
             }
             catch (OperationCanceledException)
@@ -63,19 +68,21 @@ public sealed class Server(ServerOptions options) : IDisposable
             }
             catch (ObjectDisposedException)
             {
-                return;
+                break;
             }
             catch (SocketException ex)
             {
                 Console.WriteLine($"Socket error while receiving UDP packet: {ex.Message}");
             }
         }
+
+        ArrayPool<byte>.Shared.Return(rented);
     }
 
     public void Dispose()
     {
         Stop();
         _socket.Dispose();
-        _cts.Dispose();
+        _cts?.Dispose();
     }
 }

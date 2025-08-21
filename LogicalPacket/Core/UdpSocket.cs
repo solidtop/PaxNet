@@ -1,64 +1,41 @@
-﻿using System.Buffers;
-using System.Net;
+﻿using System.Net;
 using System.Net.Sockets;
 
 namespace LogicalPacket.Core;
 
 public sealed class UdpSocket : IDisposable
 {
-    private const int MaxUdpSize = 1500;
-
-    private readonly Socket _socket;
+    private readonly Socket _socket = new(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+    private readonly IPEndPoint _anyRemoteEndPoint = new(IPAddress.Any, 0);
     private bool _disposed;
 
-    public UdpSocket(int port)
+    public void Bind(IPEndPoint endpoint)
     {
-        _socket = new Socket(AddressFamily.InterNetworkV6, SocketType.Dgram, ProtocolType.Udp)
-        {
-            DualMode = true,
-        };
-
-        _socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
-        _socket.Bind(new IPEndPoint(IPAddress.IPv6Any, port));
+        ThrowIfDisposed();
+        _socket.Bind(endpoint);
     }
 
-    public ValueTask<int> SendAsync(ReadOnlyMemory<byte> datagram, IPEndPoint endPoint, CancellationToken cancellationToken)
+    public ValueTask<int> SendAsync(ReadOnlyMemory<byte> buffer, IPEndPoint endPoint, CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
 
-        return _socket.SendToAsync(datagram, SocketFlags.None, endPoint, cancellationToken);
+        return _socket.SendToAsync(buffer, SocketFlags.None, endPoint, cancellationToken);
     }
 
-    public async ValueTask<UdpReceiveResult> ReceiveAsync(CancellationToken cancellationToken)
+    public ValueTask<SocketReceiveFromResult> ReceiveAsync(Memory<byte> buffer, CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
 
-        var owner = MemoryPool<byte>.Shared.Rent(MaxUdpSize);
-
-        var any = new IPEndPoint(IPAddress.IPv6Any, 0);
-        var result = await _socket.ReceiveFromAsync(owner.Memory, SocketFlags.None, any, cancellationToken).ConfigureAwait(false);
-
-        var remote = (IPEndPoint)result.RemoteEndPoint;
-        var buffer = owner.Memory[..result.ReceivedBytes];
-
-        return new UdpReceiveResult(remote, owner, buffer);
+        return _socket.ReceiveFromAsync(buffer, _anyRemoteEndPoint, cancellationToken);
     }
 
     public void Dispose()
     {
-        Dispose(true);
-    }
-
-    private void Dispose(bool disposing)
-    {
         if (_disposed)
             return;
 
-        if (disposing)
-        {
-            _socket.Dispose();
-            _disposed = true;
-        }
+        _socket.Dispose();
+        _disposed = true;
     }
 
     private void ThrowIfDisposed()
@@ -67,10 +44,3 @@ public sealed class UdpSocket : IDisposable
     }
 }
 
-public readonly struct UdpReceiveResult(IPEndPoint remoteEndPoint, IMemoryOwner<byte> owner, ReadOnlyMemory<byte> buffer) : IDisposable
-{
-    public IPEndPoint RemoteEndPoint { get; } = remoteEndPoint;
-    public IMemoryOwner<byte> Owner { get; } = owner;
-    public ReadOnlyMemory<byte> Buffer { get; } = buffer;
-    public void Dispose() => Owner.Dispose();
-}

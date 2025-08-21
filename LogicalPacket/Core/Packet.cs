@@ -1,4 +1,5 @@
 ﻿namespace LogicalPacket.Core;
+
 public readonly struct Packet(PacketHeader header, ReadOnlyMemory<byte> payload)
 {
     public PacketHeader Header { get; } = header;
@@ -15,6 +16,7 @@ public readonly struct PacketHeader(PacketType type, PacketFlags flags, uint seq
 public enum PacketType : byte
 {
     Connect,
+    ConnectAccept,
     Disconnect,
 }
 
