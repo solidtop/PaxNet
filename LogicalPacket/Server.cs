@@ -18,8 +18,6 @@ public sealed class Server : IDisposable
     private readonly ConcurrentDictionary<SocketAddress, IPEndPoint> _endPointCache;
     private readonly ConcurrentDictionary<IPEndPoint, Client> _clients;
 
-    private readonly Packet _connectAcceptPacket;
-
     private CancellationTokenSource? _cts;
     private Task? _receiveTask;
 
@@ -33,8 +31,6 @@ public sealed class Server : IDisposable
         _clients = [];
         _endPointCache = [];
         _addressCache = [];
-
-        _connectAcceptPacket = new Packet(PacketType.ConnectAccept);
     }
 
     public void Dispose()
@@ -145,7 +141,8 @@ public sealed class Server : IDisposable
         client = new Client(this, remoteEndPoint);
         _clients.TryAdd(remoteEndPoint, client);
 
-        Send(_connectAcceptPacket, remoteEndPoint);
+        var connectAcceptPacket = new Packet(PacketType.ConnectAccept);
+        Send(connectAcceptPacket, remoteEndPoint);
     }
 
     private IPEndPoint GetEndPoint(SocketAddress address)
