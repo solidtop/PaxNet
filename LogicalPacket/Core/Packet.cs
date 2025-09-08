@@ -1,16 +1,55 @@
-﻿namespace LogicalPacket.Core;
+using System.Buffers;
+using System.Buffers.Binary;
 
-public readonly struct Packet(PacketHeader header, ReadOnlyMemory<byte> payload)
-{
-    public PacketHeader Header { get; } = header;
-    public ReadOnlyMemory<byte> Payload { get; } = payload;
-}
+namespace LogicalPacket.Core;
 
-public readonly struct PacketHeader(PacketType type, PacketFlags flags, uint sequence)
+public readonly struct Packet : IDisposable
 {
-    public PacketType Type { get; } = type;
-    public PacketFlags Flags { get; } = flags;
-    public uint Sequence { get; } = sequence;
+    private readonly IMemoryOwner<byte>? _bufferOwner;
+
+    public readonly int Size;
+    public readonly Memory<byte> Data;
+
+    public Packet(IMemoryOwner<byte> bufferOwner, int size)
+    {
+        _bufferOwner = bufferOwner;
+
+        Size = size;
+        Data = bufferOwner.Memory[..size];
+    }
+
+    public Packet(PacketType type)
+    {
+        Size = GetHeaderSize(type);
+        Data = new byte[Size];
+        Type = type;
+    }
+
+    public PacketType Type
+    {
+        get => (PacketType)Data.Span[0];
+        set => Data.Span[0] = (byte)value;
+    }
+
+    public ushort Sequence
+    {
+        get => BinaryPrimitives.ReadUInt16LittleEndian(Data.Span.Slice(1, 2));
+        set => BinaryPrimitives.WriteUInt16LittleEndian(Data.Span.Slice(1, 2), value);
+    }
+
+    public static int GetHeaderSize(PacketType type)
+    {
+        return type switch
+        {
+            PacketType.Ping or PacketType.Pong => 1,
+            _ => 3
+        };
+    }
+
+    public void Dispose()
+    {
+        _bufferOwner?.Dispose();
+    }
 }
 
 public enum PacketType : byte
@@ -18,12 +57,7 @@ public enum PacketType : byte
     Connect,
     ConnectAccept,
     Disconnect,
-}
-
-[Flags]
-public enum PacketFlags : byte
-{
-    None,
-    Reliable,
-    Sequenced,
+    Data,
+    Ping,
+    Pong
 }

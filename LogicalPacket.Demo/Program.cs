@@ -1,8 +1,6 @@
-﻿using LogicalPacket.Core;
+﻿using LogicalPacket;
 
 var server = new Server();
-server.Start(port: 8000);
-
+server.Start(8000);
 Console.ReadLine();
-
 server.Stop();
