@@ -168,7 +168,6 @@ public sealed class Server : IDisposable
                     client!.ProcessPacket(packet);
                 else
                     packet.Dispose();
-
                 break;
             }
         }
