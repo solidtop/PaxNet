@@ -14,6 +14,10 @@ public sealed class Client(Server server, IPEndPoint remoteEndPoint)
     {
         switch (packet.Type)
         {
+            case PacketType.Unreliable:
+                _server.EnqueueEvent(NetEvents.Receive(this, packet, DeliveryMethod.Unreliable));
+                packet.Dispose();
+                break;
             case PacketType.Ping:
                 _server.Send(_pongPacket, this);
                 packet.Dispose();

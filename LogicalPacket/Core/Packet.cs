@@ -6,43 +6,41 @@ namespace LogicalPacket.Core;
 public readonly struct Packet : IDisposable
 {
     private readonly IMemoryOwner<byte>? _bufferOwner;
-
-    public readonly int Size;
-    public readonly Memory<byte> Data;
+    private readonly Memory<byte> _data;
 
     public Packet(IMemoryOwner<byte> bufferOwner, int size)
     {
         _bufferOwner = bufferOwner;
-
-        Size = size;
-        Data = bufferOwner.Memory[..size];
+        _data = bufferOwner.Memory[..size];
     }
 
     public Packet(PacketType type)
     {
-        Size = GetHeaderSize(type);
-        Data = new byte[Size];
+        _data = new byte[GetHeaderSize(type)];
         Type = type;
     }
 
+    public ReadOnlyMemory<byte> Data => _data;
+
     public PacketType Type
     {
-        get => (PacketType)Data.Span[0];
-        set => Data.Span[0] = (byte)value;
+        get => (PacketType)_data.Span[0];
+        set => _data.Span[0] = (byte)value;
     }
 
     public ushort Sequence
     {
-        get => BinaryPrimitives.ReadUInt16LittleEndian(Data.Span.Slice(1, 2));
-        set => BinaryPrimitives.WriteUInt16LittleEndian(Data.Span.Slice(1, 2), value);
+        get => BinaryPrimitives.ReadUInt16LittleEndian(_data.Span.Slice(1, 2));
+        set => BinaryPrimitives.WriteUInt16LittleEndian(_data.Span.Slice(1, 2), value);
     }
+
+    public ReadOnlyMemory<byte> Payload => _data[GetHeaderSize(Type)..];
 
     public static int GetHeaderSize(PacketType type)
     {
         return type switch
         {
-            PacketType.Ping or PacketType.Pong => 1,
-            _ => 3
+            _ => 1
         };
     }
 
@@ -57,7 +55,7 @@ public enum PacketType : byte
     Connect,
     ConnectAccept,
     Disconnect,
-    Data,
+    Unreliable,
     Ping,
     Pong
 }
