@@ -61,6 +61,8 @@ public sealed class Server : IDisposable
         _receiveTask?.Wait();
         _socket.Close();
         _clients.Clear();
+        _endPointCache.Clear();
+        _addressCache.Clear();
         _eventQueue.Clear();
         _cts?.Dispose();
         _cts = null;
