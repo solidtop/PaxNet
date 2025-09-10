@@ -17,6 +17,7 @@ public ref struct PacketReader(ReadOnlySpan<byte> buffer)
         return value;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public ReadOnlySpan<byte> ReadBytes(int length)
     {
         var value = _buffer.Slice(_position, length);
