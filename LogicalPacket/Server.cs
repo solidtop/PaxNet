@@ -10,19 +10,22 @@ public sealed class Server : IDisposable
 {
     private const int MaxPacketSize = 1024;
 
+    private readonly INetEventListener _eventListener;
     private readonly Socket _socket;
     private readonly MemoryPool<byte> _bufferPool;
     private readonly IPEndPoint _endPointFactory;
 
-    private readonly ConcurrentDictionary<IPEndPoint, SocketAddress> _addressCache;
-    private readonly ConcurrentDictionary<SocketAddress, IPEndPoint> _endPointCache;
     private readonly ConcurrentDictionary<IPEndPoint, Client> _clients;
+    private readonly ConcurrentDictionary<SocketAddress, IPEndPoint> _endPointCache;
+    private readonly ConcurrentDictionary<IPEndPoint, SocketAddress> _addressCache;
+    private readonly ConcurrentQueue<NetEvent> _eventQueue;
 
     private CancellationTokenSource? _cts;
     private Task? _receiveTask;
 
-    public Server()
+    public Server(INetEventListener eventListener)
     {
+        _eventListener = eventListener;
         _socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
         _socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
         _bufferPool = MemoryPool<byte>.Shared;
@@ -31,6 +34,7 @@ public sealed class Server : IDisposable
         _clients = [];
         _endPointCache = [];
         _addressCache = [];
+        _eventQueue = [];
     }
 
     public void Dispose()
@@ -55,9 +59,34 @@ public sealed class Server : IDisposable
 
         _cts?.Cancel();
         _receiveTask?.Wait();
+        _socket.Close();
+        _clients.Clear();
+        _endPointCache.Clear();
+        _addressCache.Clear();
+        _eventQueue.Clear();
         _cts?.Dispose();
         _cts = null;
         _receiveTask = null;
+    }
+
+    public void PollEvents()
+    {
+        while (_eventQueue.TryDequeue(out var netEvent))
+            switch (netEvent)
+            {
+                case ConnectEvent connectEvent:
+                    _eventListener.OnClientConnected(connectEvent.Client);
+                    break;
+                case DisconnectEvent disconnectEvent:
+                    _eventListener.OnClientDisconnected(disconnectEvent.Client);
+                    break;
+                case ReceiveEvent receiveEvent:
+                    var reader = new PacketReader(receiveEvent.Packet.Payload.Span);
+                    _eventListener.OnPacketReceived(receiveEvent.Client, reader, receiveEvent.DeliveryMethod);
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException($"Unknown netEvent: {nameof(netEvent)}");
+            }
     }
 
     internal int Send(Packet packet, IPEndPoint remoteEndPoint)
@@ -76,6 +105,11 @@ public sealed class Server : IDisposable
         {
             packet.Dispose();
         }
+    }
+
+    internal void EnqueueEvent(NetEvent netEvent)
+    {
+        _eventQueue.Enqueue(netEvent);
     }
 
     private async Task ReceiveLoopAsync(CancellationToken cancellationToken)
@@ -126,10 +160,16 @@ public sealed class Server : IDisposable
                 ProcessConnect(packet, remoteEndPoint, client);
                 packet.Dispose();
                 break;
+            case PacketType.Disconnect:
+                break;
             default:
+            {
                 if (clientFound)
                     client!.ProcessPacket(packet);
+                else
+                    packet.Dispose();
                 break;
+            }
         }
     }
 
@@ -143,6 +183,8 @@ public sealed class Server : IDisposable
 
         var connectAcceptPacket = new Packet(PacketType.ConnectAccept);
         Send(connectAcceptPacket, remoteEndPoint);
+
+        EnqueueEvent(NetEvents.Connect(client));
     }
 
     private IPEndPoint GetEndPoint(SocketAddress address)
