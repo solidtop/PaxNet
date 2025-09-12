@@ -7,7 +7,7 @@ namespace LogicalPacket.Core;
 public ref struct PacketReader(ReadOnlySpan<byte> buffer)
 {
     private readonly ReadOnlySpan<byte> _buffer = buffer;
-    private int _position;
+    private int _position = 0;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public byte ReadByte()

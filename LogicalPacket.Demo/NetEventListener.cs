@@ -1,3 +1,5 @@
+using System.Buffers;
+using System.Net;
 using System.Net.Sockets;
 using LogicalPacket.Core;
 
@@ -5,26 +7,31 @@ namespace LogicalPacket.Demo;
 
 public class NetEventListener : INetEventListener
 {
-    public void OnClientConnected(Client client)
+    private readonly MemoryPool<byte> _bufferPool = MemoryPool<byte>.Shared;
+
+    public void OnPacketReceived(Peer peer, PacketReader reader, DeliveryMethod deliveryMethod)
     {
-        Console.WriteLine($"Client {client} connected");
+        Console.WriteLine($"Packet received from {peer} with method {deliveryMethod}");
+
+        using var buffer = _bufferPool.Rent(1024);
+        var writer = new PacketWriter(buffer.Memory.Span);
+        writer.WriteString("From server yo");
+        peer.Send(writer.Data, DeliveryMethod.Unreliable);
     }
 
-    public void OnClientDisconnected(Client client)
-    {
-        Console.WriteLine($"Client {client} disconnected");
-    }
-
-    public void OnPacketReceived(Client client, PacketReader reader, DeliveryMethod deliveryMethod)
-    {
-        Console.WriteLine($"Packet received from {client} with method {deliveryMethod}");
-
-        var str = reader.ReadString();
-        Console.WriteLine($"str: {str}");
-    }
-
-    public void OnError(Client client, SocketError error)
+    public void OnError(IPEndPoint endPoint, SocketError error)
     {
         throw new NotImplementedException();
+    }
+
+
+    public void OnPeerConnected(Peer peer)
+    {
+        Console.WriteLine($"Peer {peer} connected");
+    }
+
+    public void OnPeerDisconnected(Peer peer)
+    {
+        Console.WriteLine($"Peer {peer} disconnected");
     }
 }

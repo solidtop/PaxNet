@@ -1,11 +1,12 @@
+using System.Net;
 using System.Net.Sockets;
 
 namespace LogicalPacket.Core;
 
 public interface INetEventListener
 {
-    void OnClientConnected(Client client);
-    void OnClientDisconnected(Client client);
-    void OnPacketReceived(Client client, PacketReader reader, DeliveryMethod deliveryMethod);
-    void OnError(Client client, SocketError error);
+    void OnPeerConnected(Peer peer);
+    void OnPeerDisconnected(Peer peer);
+    void OnPacketReceived(Peer peer, PacketReader reader, DeliveryMethod deliveryMethod);
+    void OnError(IPEndPoint endPoint, SocketError error);
 }

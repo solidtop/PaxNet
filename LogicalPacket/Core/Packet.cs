@@ -3,7 +3,7 @@ using System.Buffers.Binary;
 
 namespace LogicalPacket.Core;
 
-public readonly struct Packet : IDisposable
+internal readonly struct Packet : IDisposable
 {
     private readonly IMemoryOwner<byte>? _bufferOwner;
     private readonly Memory<byte> _data;
@@ -34,7 +34,11 @@ public readonly struct Packet : IDisposable
         set => BinaryPrimitives.WriteUInt16LittleEndian(_data.Span.Slice(1, 2), value);
     }
 
-    public ReadOnlyMemory<byte> Payload => _data[GetHeaderSize(Type)..];
+    public ReadOnlyMemory<byte> Payload
+    {
+        get => _data[GetHeaderSize(Type)..];
+        set => value.CopyTo(_data[GetHeaderSize(Type)..]);
+    }
 
     public static int GetHeaderSize(PacketType type)
     {
