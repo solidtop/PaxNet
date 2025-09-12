@@ -14,10 +14,9 @@ public sealed class Peer : IPEndPoint
     private readonly Packet _pongPacket;
 
     private CancellationTokenSource? _cts;
-
     private Task? _sendTask;
 
-    public Peer(Server server, IPEndPoint remoteEndPoint) : base(remoteEndPoint.Address, remoteEndPoint.Port)
+    internal Peer(Server server, IPEndPoint remoteEndPoint) : base(remoteEndPoint.Address, remoteEndPoint.Port)
     {
         _server = server;
         _bufferPool = MemoryPool<byte>.Shared;
