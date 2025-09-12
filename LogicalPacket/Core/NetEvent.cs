@@ -2,36 +2,36 @@ using System.Net.Sockets;
 
 namespace LogicalPacket.Core;
 
-internal abstract record NetEvent(Client Client);
+internal abstract record NetEvent(Peer Peer);
 
-internal sealed record ConnectEvent(Client Client) : NetEvent(Client);
+internal sealed record ConnectEvent(Peer Peer) : NetEvent(Peer);
 
-internal sealed record DisconnectEvent(Client Client) : NetEvent(Client);
+internal sealed record DisconnectEvent(Peer Peer) : NetEvent(Peer);
 
-internal sealed record ReceiveEvent(Client Client, Packet Packet, DeliveryMethod DeliveryMethod) : NetEvent(Client);
+internal sealed record ReceiveEvent(Peer Peer, Packet Packet, DeliveryMethod DeliveryMethod) : NetEvent(Peer);
 
-internal sealed record ErrorEvent(Client Client, SocketError Error) : NetEvent(Client);
+internal sealed record ErrorEvent(Peer Peer, SocketError Error) : NetEvent(Peer);
 
 internal static class NetEvents
 {
-    public static ConnectEvent Connect(Client client)
+    public static ConnectEvent Connect(Peer peer)
     {
-        return new ConnectEvent(client);
+        return new ConnectEvent(peer);
     }
 
-    public static DisconnectEvent Disconnect(Client client)
+    public static DisconnectEvent Disconnect(Peer peer)
     {
-        return new DisconnectEvent(client);
+        return new DisconnectEvent(peer);
     }
 
-    public static ReceiveEvent Receive(Client client, Packet packet, DeliveryMethod deliveryMethod)
+    public static ReceiveEvent Receive(Peer peer, Packet packet, DeliveryMethod deliveryMethod)
     {
-        return new ReceiveEvent(client, packet, deliveryMethod);
+        return new ReceiveEvent(peer, packet, deliveryMethod);
     }
 
-    public static ErrorEvent Error(Client client, SocketError error)
+    public static ErrorEvent Error(Peer peer, SocketError error)
     {
-        return new ErrorEvent(client, error);
+        return new ErrorEvent(peer, error);
     }
 }
 

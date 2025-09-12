@@ -15,7 +15,7 @@ public sealed class Server : IDisposable
     private readonly MemoryPool<byte> _bufferPool;
     private readonly IPEndPoint _endPointFactory;
 
-    private readonly ConcurrentDictionary<IPEndPoint, Client> _clients;
+    private readonly ConcurrentDictionary<IPEndPoint, Peer> _peers;
     private readonly ConcurrentDictionary<SocketAddress, IPEndPoint> _endPointCache;
     private readonly ConcurrentDictionary<IPEndPoint, SocketAddress> _addressCache;
     private readonly ConcurrentQueue<NetEvent> _eventQueue;
@@ -31,7 +31,7 @@ public sealed class Server : IDisposable
         _bufferPool = MemoryPool<byte>.Shared;
         _endPointFactory = new IPEndPoint(IPAddress.Any, 0);
 
-        _clients = [];
+        _peers = [];
         _endPointCache = [];
         _addressCache = [];
         _eventQueue = [];
@@ -60,7 +60,7 @@ public sealed class Server : IDisposable
         _cts?.Cancel();
         _receiveTask?.Wait();
         _socket.Close();
-        _clients.Clear();
+        _peers.Clear();
         _endPointCache.Clear();
         _addressCache.Clear();
         _eventQueue.Clear();
@@ -75,14 +75,14 @@ public sealed class Server : IDisposable
             switch (netEvent)
             {
                 case ConnectEvent connectEvent:
-                    _eventListener.OnClientConnected(connectEvent.Client);
+                    _eventListener.OnPeerConnected(connectEvent.Peer);
                     break;
                 case DisconnectEvent disconnectEvent:
-                    _eventListener.OnClientDisconnected(disconnectEvent.Client);
+                    _eventListener.OnPeerDisconnected(disconnectEvent.Peer);
                     break;
                 case ReceiveEvent receiveEvent:
                     var reader = new PacketReader(receiveEvent.Packet.Payload.Span);
-                    _eventListener.OnPacketReceived(receiveEvent.Client, reader, receiveEvent.DeliveryMethod);
+                    _eventListener.OnPacketReceived(receiveEvent.Peer, reader, receiveEvent.DeliveryMethod);
                     break;
                 default:
                     throw new ArgumentOutOfRangeException($"Unknown netEvent: {nameof(netEvent)}");
@@ -100,6 +100,25 @@ public sealed class Server : IDisposable
         {
             Console.WriteLine(ex.Message);
             return 0;
+        }
+        finally
+        {
+            packet.Dispose();
+        }
+    }
+
+    internal ValueTask<int> SendAsync(Packet packet, IPEndPoint remoteEndPoint,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var address = _addressCache.GetOrAdd(remoteEndPoint, ep => ep.Serialize());
+            return _socket.SendToAsync(packet.Data, SocketFlags.None, address, cancellationToken);
+        }
+        catch (SocketException ex)
+        {
+            Console.WriteLine(ex.Message);
+            return ValueTask.FromResult(0);
         }
         finally
         {
@@ -152,39 +171,38 @@ public sealed class Server : IDisposable
 
     private void HandlePacket(Packet packet, IPEndPoint remoteEndPoint)
     {
-        var clientFound = _clients.TryGetValue(remoteEndPoint, out var client);
+        var peeerFound = _peers.TryGetValue(remoteEndPoint, out var peer);
 
         switch (packet.Type)
         {
             case PacketType.Connect:
-                ProcessConnect(packet, remoteEndPoint, client);
+                ProcessConnect(packet, remoteEndPoint, peer);
                 packet.Dispose();
                 break;
             case PacketType.Disconnect:
                 break;
             default:
-            {
-                if (clientFound)
-                    client!.ProcessPacket(packet);
+                if (peeerFound)
+                    peer!.ProcessPacket(packet);
                 else
                     packet.Dispose();
                 break;
-            }
         }
     }
 
-    private void ProcessConnect(Packet packet, IPEndPoint remoteEndPoint, Client? client)
+    private void ProcessConnect(Packet packet, IPEndPoint remoteEndPoint, Peer? peer)
     {
         // TODO: Implement a more robust connection handshake
-        if (client != null) return;
+        if (peer != null) return;
 
-        client = new Client(this, remoteEndPoint);
-        _clients.TryAdd(remoteEndPoint, client);
+        peer = new Peer(this, remoteEndPoint);
+        peer.Connect(_cts!.Token);
+        _peers.TryAdd(remoteEndPoint, peer);
 
         var connectAcceptPacket = new Packet(PacketType.ConnectAccept);
         Send(connectAcceptPacket, remoteEndPoint);
 
-        EnqueueEvent(NetEvents.Connect(client));
+        EnqueueEvent(NetEvents.Connect(peer));
     }
 
     private IPEndPoint GetEndPoint(SocketAddress address)

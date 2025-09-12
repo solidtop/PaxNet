@@ -3,7 +3,7 @@ using System.Net;
 
 namespace LogicalPacket.Core;
 
-public sealed class Client : IPEndPoint
+public sealed class Peer : IPEndPoint
 {
     private readonly Server _server;
     private readonly MemoryPool<byte> _bufferPool;
@@ -17,7 +17,7 @@ public sealed class Client : IPEndPoint
 
     private Task? _sendTask;
 
-    public Client(Server server, IPEndPoint remoteEndPoint) : base(remoteEndPoint.Address, remoteEndPoint.Port)
+    public Peer(Server server, IPEndPoint remoteEndPoint) : base(remoteEndPoint.Address, remoteEndPoint.Port)
     {
         _server = server;
         _bufferPool = MemoryPool<byte>.Shared;
