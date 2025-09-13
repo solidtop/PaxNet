@@ -19,9 +19,9 @@ public class NetEventListener : INetEventListener
         Console.WriteLine($"Peer {peer} connected");
     }
 
-    public void OnPeerDisconnected(Peer peer)
+    public void OnPeerDisconnected(Peer peer, DisconnectInfo info)
     {
-        Console.WriteLine($"Peer {peer} disconnected");
+        Console.WriteLine($"Peer {peer} disconnected with reason: {info.Reason}");
     }
 
     public void OnPacketReceived(Peer peer, PacketReader reader, DeliveryMethod deliveryMethod)

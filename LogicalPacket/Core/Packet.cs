@@ -60,6 +60,7 @@ public enum PacketType : byte
     ConnectAccept,
     ConnectReject,
     Disconnect,
+    Shutdown,
     Unreliable,
     Ping,
     Pong

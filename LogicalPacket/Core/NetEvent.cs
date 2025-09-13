@@ -6,7 +6,7 @@ internal abstract record NetEvent(Peer Peer);
 
 internal sealed record ConnectEvent(Peer Peer) : NetEvent(Peer);
 
-internal sealed record DisconnectEvent(Peer Peer) : NetEvent(Peer);
+internal sealed record DisconnectEvent(Peer Peer, DisconnectInfo Info) : NetEvent(Peer);
 
 internal sealed record ReceiveEvent(Peer Peer, Packet Packet, DeliveryMethod DeliveryMethod) : NetEvent(Peer);
 
@@ -19,9 +19,9 @@ internal static class NetEvents
         return new ConnectEvent(peer);
     }
 
-    public static DisconnectEvent Disconnect(Peer peer)
+    public static DisconnectEvent Disconnect(Peer peer, DisconnectInfo info)
     {
-        return new DisconnectEvent(peer);
+        return new DisconnectEvent(peer, info);
     }
 
     public static ReceiveEvent Receive(Peer peer, Packet packet, DeliveryMethod deliveryMethod)

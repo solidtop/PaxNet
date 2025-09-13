@@ -57,12 +57,12 @@ public sealed class Peer : IPEndPoint
         _sendTask = Task.Run(() => _unreliableChannel.ProcessAsync(_cts.Token), _cts.Token);
     }
 
-    internal async Task DisconnectAsync()
+    internal void Disconnect()
     {
-        if (_cts != null) await _cts.CancelAsync();
-        _unreliableChannel.Complete();
-        if (_sendTask != null) await _sendTask;
+        _cts?.Cancel();
         _cts?.Dispose();
+        _cts = null;
+        _unreliableChannel.Complete();
     }
 
     internal void ProcessPacket(Packet packet)

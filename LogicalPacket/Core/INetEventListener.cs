@@ -7,7 +7,19 @@ public interface INetEventListener
 {
     void OnConnectionRequest(ConnectionRequest request);
     void OnPeerConnected(Peer peer);
-    void OnPeerDisconnected(Peer peer);
+    void OnPeerDisconnected(Peer peer, DisconnectInfo info);
     void OnPacketReceived(Peer peer, PacketReader reader, DeliveryMethod deliveryMethod);
     void OnError(IPEndPoint endPoint, SocketError error);
 }
+
+public enum DisconnectReason
+{
+    Unknown,
+    ServerShutdown,
+    Timeout,
+    ConnectionLost,
+    ConnectionRefused,
+    RemoteClose
+}
+
+public record struct DisconnectInfo(DisconnectReason Reason, SocketError? SocketError);

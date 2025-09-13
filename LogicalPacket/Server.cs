@@ -78,7 +78,7 @@ public sealed class Server : IDisposable
                     _eventListener.OnPeerConnected(connectEvent.Peer);
                     break;
                 case DisconnectEvent disconnectEvent:
-                    _eventListener.OnPeerDisconnected(disconnectEvent.Peer);
+                    _eventListener.OnPeerDisconnected(disconnectEvent.Peer, disconnectEvent.Info);
                     break;
                 case ReceiveEvent receiveEvent:
                     var reader = new PacketReader(receiveEvent.Packet.Payload.Span);
@@ -150,6 +150,20 @@ public sealed class Server : IDisposable
         Send(rejectPacket, remoteEndPoint);
     }
 
+    internal void DisconnectPeer(Peer peer, DisconnectReason reason, SocketError error = SocketError.Success)
+    {
+        DisconnectPeer(peer, new DisconnectInfo(reason, error));
+    }
+
+    internal void DisconnectPeer(Peer peer, DisconnectInfo info)
+    {
+        _peers.TryRemove(peer, out _);
+
+        peer.Disconnect();
+
+        EnqueueEvent(NetEvents.Disconnect(peer, info));
+    }
+
     private async Task ReceiveLoopAsync(CancellationToken cancellationToken)
     {
         // Preallocate SocketAddress for reuse
@@ -199,6 +213,14 @@ public sealed class Server : IDisposable
                 packet.Dispose();
                 break;
             case PacketType.Disconnect:
+                if (peerFound)
+                {
+                    DisconnectPeer(peer!, DisconnectReason.RemoteClose);
+                    var shutdownPacket = new Packet(PacketType.Shutdown);
+                    Send(shutdownPacket, peer!);
+                }
+
+                packet.Dispose();
                 break;
             default:
                 if (peerFound)
