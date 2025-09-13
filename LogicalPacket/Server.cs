@@ -204,40 +204,44 @@ public sealed class Server : IDisposable
 
     private void HandlePacket(Packet packet, IPEndPoint remoteEndPoint)
     {
-        var peerFound = _peers.TryGetValue(remoteEndPoint, out var peer);
+        _peers.TryGetValue(remoteEndPoint, out var peer);
 
         switch (packet.Type)
         {
             case PacketType.ConnectRequest:
-                ProcessConnectRequest(packet, remoteEndPoint, peer);
+                HandleConnectRequest(packet, remoteEndPoint, peer);
                 packet.Dispose();
                 break;
             case PacketType.Disconnect:
-                if (peerFound)
-                {
-                    DisconnectPeer(peer!, DisconnectReason.RemoteClose);
-                    var shutdownPacket = new Packet(PacketType.Shutdown);
-                    Send(shutdownPacket, peer!);
-                }
-
+                HandleDisconnect(peer);
                 packet.Dispose();
                 break;
             default:
-                if (peerFound)
-                    peer!.ProcessPacket(packet);
+                if (peer != null)
+                    peer.ProcessPacket(packet);
                 else
                     packet.Dispose();
                 break;
         }
     }
 
-    private void ProcessConnectRequest(Packet packet, IPEndPoint remoteEndPoint, Peer? peer)
+    private void HandleConnectRequest(Packet packet, IPEndPoint remoteEndPoint, Peer? peer)
     {
         if (peer != null) return;
 
         var request = new ConnectionRequest(this, remoteEndPoint, packet);
 
         _eventListener.OnConnectionRequest(request);
+    }
+
+    private void HandleDisconnect(Peer? peer)
+    {
+        if (peer == null) return;
+
+        DisconnectPeer(peer, DisconnectReason.RemoteClose);
+
+        var shutdownPacket = new Packet(PacketType.Shutdown);
+        Send(shutdownPacket, peer);
     }
 
     private IPEndPoint GetEndPoint(SocketAddress address)
