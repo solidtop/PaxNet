@@ -171,7 +171,7 @@ public sealed class Server : IDisposable
 
     private void HandlePacket(Packet packet, IPEndPoint remoteEndPoint)
     {
-        var peeerFound = _peers.TryGetValue(remoteEndPoint, out var peer);
+        var peerFound = _peers.TryGetValue(remoteEndPoint, out var peer);
 
         switch (packet.Type)
         {
@@ -182,7 +182,7 @@ public sealed class Server : IDisposable
             case PacketType.Disconnect:
                 break;
             default:
-                if (peeerFound)
+                if (peerFound)
                     peer!.ProcessPacket(packet);
                 else
                     packet.Dispose();
