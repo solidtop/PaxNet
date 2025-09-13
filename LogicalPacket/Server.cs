@@ -131,6 +131,25 @@ public sealed class Server : IDisposable
         _eventQueue.Enqueue(netEvent);
     }
 
+    internal void AcceptConnection(IPEndPoint remoteEndPoint)
+    {
+        var peer = new Peer(this, remoteEndPoint);
+        if (!_peers.TryAdd(remoteEndPoint, peer)) return;
+
+        peer.Connect(_cts!.Token);
+
+        var connectAcceptPacket = new Packet(PacketType.ConnectAccept);
+        Send(connectAcceptPacket, remoteEndPoint);
+
+        EnqueueEvent(NetEvents.Connect(peer));
+    }
+
+    internal void RejectConnection(IPEndPoint remoteEndPoint)
+    {
+        var rejectPacket = new Packet(PacketType.ConnectReject);
+        Send(rejectPacket, remoteEndPoint);
+    }
+
     private async Task ReceiveLoopAsync(CancellationToken cancellationToken)
     {
         // Preallocate SocketAddress for reuse
@@ -175,8 +194,8 @@ public sealed class Server : IDisposable
 
         switch (packet.Type)
         {
-            case PacketType.Connect:
-                ProcessConnect(packet, remoteEndPoint, peer);
+            case PacketType.ConnectRequest:
+                ProcessConnectRequest(packet, remoteEndPoint, peer);
                 packet.Dispose();
                 break;
             case PacketType.Disconnect:
@@ -190,19 +209,13 @@ public sealed class Server : IDisposable
         }
     }
 
-    private void ProcessConnect(Packet packet, IPEndPoint remoteEndPoint, Peer? peer)
+    private void ProcessConnectRequest(Packet packet, IPEndPoint remoteEndPoint, Peer? peer)
     {
-        // TODO: Implement a more robust connection handshake
         if (peer != null) return;
 
-        peer = new Peer(this, remoteEndPoint);
-        peer.Connect(_cts!.Token);
-        _peers.TryAdd(remoteEndPoint, peer);
+        var request = new ConnectionRequest(this, remoteEndPoint, packet);
 
-        var connectAcceptPacket = new Packet(PacketType.ConnectAccept);
-        Send(connectAcceptPacket, remoteEndPoint);
-
-        EnqueueEvent(NetEvents.Connect(peer));
+        _eventListener.OnConnectionRequest(request);
     }
 
     private IPEndPoint GetEndPoint(SocketAddress address)

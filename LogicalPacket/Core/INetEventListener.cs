@@ -5,6 +5,7 @@ namespace LogicalPacket.Core;
 
 public interface INetEventListener
 {
+    void OnConnectionRequest(ConnectionRequest request);
     void OnPeerConnected(Peer peer);
     void OnPeerDisconnected(Peer peer);
     void OnPacketReceived(Peer peer, PacketReader reader, DeliveryMethod deliveryMethod);

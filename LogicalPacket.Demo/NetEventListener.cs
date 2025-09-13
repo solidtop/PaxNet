@@ -9,21 +9,10 @@ public class NetEventListener : INetEventListener
 {
     private readonly MemoryPool<byte> _bufferPool = MemoryPool<byte>.Shared;
 
-    public void OnPacketReceived(Peer peer, PacketReader reader, DeliveryMethod deliveryMethod)
+    public void OnConnectionRequest(ConnectionRequest request)
     {
-        Console.WriteLine($"Packet received from {peer} with method {deliveryMethod}");
-
-        using var buffer = _bufferPool.Rent(1024);
-        var writer = new PacketWriter(buffer.Memory.Span);
-        writer.WriteString("From server yo");
-        peer.Send(writer.Data, DeliveryMethod.Unreliable);
+        request.AcceptIfKey("MyKey");
     }
-
-    public void OnError(IPEndPoint endPoint, SocketError error)
-    {
-        throw new NotImplementedException();
-    }
-
 
     public void OnPeerConnected(Peer peer)
     {
@@ -33,5 +22,20 @@ public class NetEventListener : INetEventListener
     public void OnPeerDisconnected(Peer peer)
     {
         Console.WriteLine($"Peer {peer} disconnected");
+    }
+
+    public void OnPacketReceived(Peer peer, PacketReader reader, DeliveryMethod deliveryMethod)
+    {
+        Console.WriteLine($"Packet received from {peer} with method {deliveryMethod}");
+
+        using var buffer = _bufferPool.Rent(1024);
+        var writer = new PacketWriter(buffer.Memory.Span);
+        writer.WriteString("Hello from server");
+        peer.Send(writer.Data, DeliveryMethod.Unreliable);
+    }
+
+    public void OnError(IPEndPoint endPoint, SocketError error)
+    {
+        throw new NotImplementedException();
     }
 }
