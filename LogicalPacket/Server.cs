@@ -78,7 +78,7 @@ public sealed class Server : IDisposable
                     _eventListener.OnPeerConnected(connectEvent.Peer);
                     break;
                 case DisconnectEvent disconnectEvent:
-                    _eventListener.OnPeerDisconnected(disconnectEvent.Peer);
+                    _eventListener.OnPeerDisconnected(disconnectEvent.Peer, disconnectEvent.Info);
                     break;
                 case ReceiveEvent receiveEvent:
                     var reader = new PacketReader(receiveEvent.Packet.Payload.Span);
@@ -131,6 +131,39 @@ public sealed class Server : IDisposable
         _eventQueue.Enqueue(netEvent);
     }
 
+    internal void AcceptConnection(IPEndPoint remoteEndPoint)
+    {
+        var peer = new Peer(this, remoteEndPoint);
+        if (!_peers.TryAdd(remoteEndPoint, peer)) return;
+
+        peer.Connect(_cts!.Token);
+
+        var connectAcceptPacket = new Packet(PacketType.ConnectAccept);
+        Send(connectAcceptPacket, remoteEndPoint);
+
+        EnqueueEvent(NetEvents.Connect(peer));
+    }
+
+    internal void RejectConnection(IPEndPoint remoteEndPoint)
+    {
+        var rejectPacket = new Packet(PacketType.ConnectReject);
+        Send(rejectPacket, remoteEndPoint);
+    }
+
+    internal void DisconnectPeer(Peer peer, DisconnectReason reason, SocketError error = SocketError.Success)
+    {
+        DisconnectPeer(peer, new DisconnectInfo(reason, error));
+    }
+
+    internal void DisconnectPeer(Peer peer, DisconnectInfo info)
+    {
+        _peers.TryRemove(peer, out _);
+
+        peer.Disconnect();
+
+        EnqueueEvent(NetEvents.Disconnect(peer, info));
+    }
+
     private async Task ReceiveLoopAsync(CancellationToken cancellationToken)
     {
         // Preallocate SocketAddress for reuse
@@ -171,38 +204,44 @@ public sealed class Server : IDisposable
 
     private void HandlePacket(Packet packet, IPEndPoint remoteEndPoint)
     {
-        var peeerFound = _peers.TryGetValue(remoteEndPoint, out var peer);
+        _peers.TryGetValue(remoteEndPoint, out var peer);
 
         switch (packet.Type)
         {
-            case PacketType.Connect:
-                ProcessConnect(packet, remoteEndPoint, peer);
+            case PacketType.ConnectRequest:
+                HandleConnectRequest(packet, remoteEndPoint, peer);
                 packet.Dispose();
                 break;
             case PacketType.Disconnect:
+                HandleDisconnect(peer);
+                packet.Dispose();
                 break;
             default:
-                if (peeerFound)
-                    peer!.ProcessPacket(packet);
+                if (peer != null)
+                    peer.ProcessPacket(packet);
                 else
                     packet.Dispose();
                 break;
         }
     }
 
-    private void ProcessConnect(Packet packet, IPEndPoint remoteEndPoint, Peer? peer)
+    private void HandleConnectRequest(Packet packet, IPEndPoint remoteEndPoint, Peer? peer)
     {
-        // TODO: Implement a more robust connection handshake
         if (peer != null) return;
 
-        peer = new Peer(this, remoteEndPoint);
-        peer.Connect(_cts!.Token);
-        _peers.TryAdd(remoteEndPoint, peer);
+        var request = new ConnectionRequest(this, remoteEndPoint, packet);
 
-        var connectAcceptPacket = new Packet(PacketType.ConnectAccept);
-        Send(connectAcceptPacket, remoteEndPoint);
+        _eventListener.OnConnectionRequest(request);
+    }
 
-        EnqueueEvent(NetEvents.Connect(peer));
+    private void HandleDisconnect(Peer? peer)
+    {
+        if (peer == null) return;
+
+        DisconnectPeer(peer, DisconnectReason.RemoteClose);
+
+        var shutdownPacket = new Packet(PacketType.Shutdown);
+        Send(shutdownPacket, peer);
     }
 
     private IPEndPoint GetEndPoint(SocketAddress address)

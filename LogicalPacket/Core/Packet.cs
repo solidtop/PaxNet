@@ -56,9 +56,11 @@ internal readonly struct Packet : IDisposable
 
 public enum PacketType : byte
 {
-    Connect,
+    ConnectRequest,
     ConnectAccept,
+    ConnectReject,
     Disconnect,
+    Shutdown,
     Unreliable,
     Ping,
     Pong
