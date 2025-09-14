@@ -51,6 +51,20 @@ public ref struct PacketWriter(Span<byte> buffer)
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void WriteInt64(long value)
+    {
+        BinaryPrimitives.WriteInt64LittleEndian(_buffer.Slice(_position, 8), value);
+        _position += 8;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void WriteUInt64(ulong value)
+    {
+        BinaryPrimitives.WriteUInt64LittleEndian(_buffer.Slice(_position, 8), value);
+        _position += 8;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void WriteFloat(float value)
     {
         BinaryPrimitives.WriteSingleLittleEndian(_buffer.Slice(_position, 4), value);

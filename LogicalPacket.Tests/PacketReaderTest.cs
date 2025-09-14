@@ -48,6 +48,34 @@ public class PacketReaderTest
     }
 
     [Fact]
+    public void ReadInt64_ShouldReturnCorrectValue_LittleEndian()
+    {
+        const long expected = 12345678L;
+        var buffer = new byte[8];
+        BinaryPrimitives.WriteInt64LittleEndian(buffer, expected);
+
+        var reader = new PacketReader(buffer);
+        var actual = reader.ReadInt64();
+
+        Assert.Equal(expected, actual);
+        Assert.True(reader.EndOfBuffer);
+    }
+
+    [Fact]
+    public void ReadUInt64_ShouldReturnCorrectValue_LittleEndian()
+    {
+        const ulong expected = 12345678UL;
+        var buffer = new byte[8];
+        BinaryPrimitives.WriteUInt64LittleEndian(buffer, expected);
+
+        var reader = new PacketReader(buffer);
+        var actual = reader.ReadUInt64();
+
+        Assert.Equal(expected, actual);
+        Assert.True(reader.EndOfBuffer);
+    }
+
+    [Fact]
     public void ReadFloat_ShouldReturnCorrectValue()
     {
         const float expected = 12345.6789f;

@@ -66,7 +66,7 @@ public ref struct PacketReader(ReadOnlySpan<byte> buffer)
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public ulong ReadUnt64()
+    public ulong ReadUInt64()
     {
         var value = BinaryPrimitives.ReadUInt64LittleEndian(_buffer.Slice(_position, 8));
         _position += 8;

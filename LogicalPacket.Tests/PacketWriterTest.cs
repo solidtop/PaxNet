@@ -76,6 +76,28 @@ public class PacketWriterTest
     }
 
     [Fact]
+    public void WriteInt64_WritesLittleEndian()
+    {
+        Span<byte> buffer = stackalloc byte[8];
+        var writer = new PacketWriter(buffer);
+
+        writer.WriteInt64(0x1122334455667788);
+
+        Assert.Equal(new byte[] { 0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11 }, writer.Data);
+    }
+
+    [Fact]
+    public void WriteUInt64_WritesLittleEndian()
+    {
+        Span<byte> buffer = stackalloc byte[8];
+        var writer = new PacketWriter(buffer);
+
+        writer.WriteUInt64(0x8877665544332211);
+
+        Assert.Equal(new byte[] { 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88 }, writer.Data);
+    }
+
+    [Fact]
     public void WriteFloat_WritesIEEE754LittleEndian()
     {
         Span<byte> buffer = stackalloc byte[4];
