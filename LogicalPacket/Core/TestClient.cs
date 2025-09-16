@@ -100,7 +100,6 @@ public class TestClient(int serverPort)
         while (!cancellationToken.IsCancellationRequested)
         {
             var packet = new Packet(PacketType.Unreliable);
-            packet.Type = PacketType.Unreliable;
             
             await SendAsync(packet, cancellationToken);
             await Task.Delay(delay, cancellationToken);
