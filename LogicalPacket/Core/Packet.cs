@@ -65,3 +65,27 @@ public enum PacketType : byte
     Ping,
     Pong
 }
+
+internal struct ConnectionRequestPacket
+{
+    public const int HeaderSize = 12;
+
+    public uint ConnectionNumber { get; set; }
+    public long ConnectionTime { get; set; }
+    public ReadOnlyMemory<byte> Payload { get; set; }
+
+    public void Write(PacketWriter writer)
+    {
+        writer.WriteUInt32(ConnectionNumber);
+        writer.WriteInt64(ConnectionTime);
+    }
+
+    public static ConnectionRequestPacket Parse(PacketReader reader)
+    {
+        return new ConnectionRequestPacket
+        {
+            ConnectionNumber = reader.ReadUInt32(),
+            ConnectionTime = reader.ReadInt64()
+        };
+    }
+}

@@ -19,7 +19,8 @@ public enum DisconnectReason
     Timeout,
     ConnectionLost,
     ConnectionRefused,
-    RemoteClose
+    RemoteClose,
+    LocalClose
 }
 
 public record struct DisconnectInfo(DisconnectReason Reason, SocketError? SocketError);

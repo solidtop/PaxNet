@@ -51,13 +51,18 @@ public sealed class Peer : IPEndPoint
         _unreliableChannel.TryWrite(packet);
     }
 
+    public void Disconnect()
+    {
+        _server.DisconnectPeer(this, DisconnectReason.LocalClose);
+    }
+
     internal void Connect(CancellationToken cancellationToken)
     {
         _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _sendTask = Task.Run(() => _unreliableChannel.ProcessAsync(_cts.Token), _cts.Token);
     }
 
-    internal void Disconnect()
+    internal void Shutdown()
     {
         _cts?.Cancel();
         _cts?.Dispose();
@@ -79,4 +84,12 @@ public sealed class Peer : IPEndPoint
                 break;
         }
     }
+}
+
+public enum ConnectionState
+{
+    Disconnected,
+    Connecting,
+    Connected,
+    Disconnecting
 }

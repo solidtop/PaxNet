@@ -74,6 +74,9 @@ public sealed class Server : IDisposable
         while (_eventQueue.TryDequeue(out var netEvent))
             switch (netEvent)
             {
+                case ConnectionRequestEvent connectionRequest:
+                    _eventListener.OnConnectionRequest(connectionRequest.Request);
+                    break;
                 case ConnectEvent connectEvent:
                     _eventListener.OnPeerConnected(connectEvent.Peer);
                     break;
@@ -159,7 +162,7 @@ public sealed class Server : IDisposable
     {
         _peers.TryRemove(peer, out _);
 
-        peer.Disconnect();
+        peer.Shutdown();
 
         EnqueueEvent(NetEvents.Disconnect(peer, info));
     }
@@ -229,9 +232,13 @@ public sealed class Server : IDisposable
     {
         if (peer != null) return;
 
-        var request = new ConnectionRequest(this, remoteEndPoint, packet);
+        var reader = new PacketReader(packet.Payload.Span);
+        var requestPacket = ConnectionRequestPacket.Parse(reader);
+        requestPacket.Payload = packet.Payload[ConnectionRequestPacket.HeaderSize..];
 
-        _eventListener.OnConnectionRequest(request);
+        var request = new ConnectionRequest(this, remoteEndPoint, requestPacket);
+
+        EnqueueEvent(NetEvents.ConnectionRequest(request));
     }
 
     private void HandleDisconnect(Peer? peer)

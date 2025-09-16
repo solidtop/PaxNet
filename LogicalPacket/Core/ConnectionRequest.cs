@@ -6,9 +6,9 @@ public class ConnectionRequest
 {
     private readonly Server _server;
     private readonly IPEndPoint _remoteEndPoint;
-    private readonly Packet _packet;
+    private readonly ConnectionRequestPacket _packet;
 
-    internal ConnectionRequest(Server server, IPEndPoint remoteEndPoint, Packet packet)
+    internal ConnectionRequest(Server server, IPEndPoint remoteEndPoint, ConnectionRequestPacket packet)
     {
         _server = server;
         _remoteEndPoint = remoteEndPoint;

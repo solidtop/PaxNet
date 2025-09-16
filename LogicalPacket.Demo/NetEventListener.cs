@@ -27,11 +27,6 @@ public class NetEventListener : INetEventListener
     public void OnPacketReceived(Peer peer, PacketReader reader, DeliveryMethod deliveryMethod)
     {
         Console.WriteLine($"Packet received from {peer} with method {deliveryMethod}");
-
-        using var buffer = _bufferPool.Rent(1024);
-        var writer = new PacketWriter(buffer.Memory.Span);
-        writer.WriteString("Hello from server");
-        peer.Send(writer.Data, DeliveryMethod.Unreliable);
     }
 
     public void OnError(IPEndPoint endPoint, SocketError error)
