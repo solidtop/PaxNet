@@ -1,7 +1,7 @@
 using System.Buffers;
 using System.Buffers.Binary;
 
-namespace PaxNet.Core;
+namespace PaxNet;
 
 internal readonly struct Packet : IDisposable
 {

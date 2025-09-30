@@ -2,7 +2,7 @@ using System.Buffers.Binary;
 using System.Runtime.CompilerServices;
 using System.Text;
 
-namespace PaxNet.Core;
+namespace PaxNet;
 
 public ref struct PacketReader(ReadOnlySpan<byte> buffer)
 {

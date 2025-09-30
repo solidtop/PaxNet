@@ -1,7 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 
-namespace PaxNet.Core;
+namespace PaxNet;
 
 internal abstract record NetEvent;
 
@@ -38,7 +38,7 @@ internal static class NetEvents
     {
         return new ReceiveEvent(peer, packet, deliveryMethod);
     }
-    
+
     public static RttEvent Rtt(Peer peer, TimeSpan rtt)
     {
         return new RttEvent(peer, rtt);

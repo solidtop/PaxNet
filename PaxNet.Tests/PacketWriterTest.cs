@@ -1,5 +1,3 @@
-using PaxNet.Core;
-
 namespace PaxNet.Tests;
 
 public class PacketWriterTest

@@ -3,7 +3,7 @@ using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Net;
 
-namespace PaxNet.Core;
+namespace PaxNet;
 
 public sealed class Peer : IPEndPoint
 {
