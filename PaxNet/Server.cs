@@ -98,11 +98,11 @@ public sealed class Server : IDisposable
                     var reader = new PacketReader(receiveEvent.Packet.Payload.Span);
                     PacketReceived?.Invoke(receiveEvent.Peer, reader, receiveEvent.DeliveryMethod);
                     break;
-                case ErrorEvent errorEvent:
-                    ErrorOccured?.Invoke(errorEvent.RemoteEndPoint, errorEvent.Error);
-                    break;
                 case RttEvent rttEvent:
                     RttUpdated?.Invoke(rttEvent.Peer, rttEvent.Rtt);
+                    break;
+                case ErrorEvent errorEvent:
+                    ErrorOccured?.Invoke(errorEvent.RemoteEndPoint, errorEvent.Error);
                     break;
                 default:
                     throw new ArgumentOutOfRangeException($"Unknown Event: {nameof(netEvent)}");
