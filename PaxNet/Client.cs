@@ -12,13 +12,9 @@ public class Client : IDisposable
     private readonly Socket _socket = new(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
     private readonly MemoryPool<byte> _bufferPool = MemoryPool<byte>.Shared;
 
-    private readonly Packet _pingPacket = new(PacketType.Ping);
-    private readonly Packet _pongPacket = new(PacketType.Pong);
-
     private IPEndPoint? _serverEndPoint;
     private CancellationTokenSource? _cts;
     private Task? _receiveTask;
-    private Task? _sendTask;
 
     public void Dispose()
     {
@@ -116,7 +112,7 @@ public class Client : IDisposable
             {
                 break;
             }
-            catch (SocketException ex)
+            catch (SocketException)
             {
             }
     }
