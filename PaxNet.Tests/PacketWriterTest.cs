@@ -1,6 +1,4 @@
-using LogicalPacket.Core;
-
-namespace LogicalPacket.Tests;
+namespace PaxNet.Tests;
 
 public class PacketWriterTest
 {

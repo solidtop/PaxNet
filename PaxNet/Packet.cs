@@ -1,7 +1,7 @@
 using System.Buffers;
 using System.Buffers.Binary;
 
-namespace LogicalPacket.Core;
+namespace PaxNet;
 
 internal readonly struct Packet : IDisposable
 {
@@ -34,7 +34,7 @@ internal readonly struct Packet : IDisposable
         set => BinaryPrimitives.WriteUInt16LittleEndian(_data.Span.Slice(1, 2), value);
     }
 
-    public ReadOnlyMemory<byte> Payload
+    public Memory<byte> Payload
     {
         get => _data[GetHeaderSize(Type)..];
         set => value.CopyTo(_data[GetHeaderSize(Type)..]);
@@ -80,7 +80,7 @@ internal struct ConnectionRequestPacket
         writer.WriteInt64(ConnectionTime);
     }
 
-    public static ConnectionRequestPacket Parse(PacketReader reader)
+    public static ConnectionRequestPacket Read(PacketReader reader)
     {
         return new ConnectionRequestPacket
         {
