@@ -8,7 +8,7 @@
     </PropertyGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\LogicalPacket\LogicalPacket.csproj" />
+      <ProjectReference Include="..\PaxNet\PaxNet.csproj" />
     </ItemGroup>
 
 </Project>

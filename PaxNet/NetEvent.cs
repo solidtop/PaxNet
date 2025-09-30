@@ -1,6 +1,7 @@
+using System.Net;
 using System.Net.Sockets;
 
-namespace LogicalPacket.Core;
+namespace PaxNet.Core;
 
 internal abstract record NetEvent;
 
@@ -12,7 +13,9 @@ internal sealed record DisconnectEvent(Peer Peer, DisconnectInfo Info) : NetEven
 
 internal sealed record ReceiveEvent(Peer Peer, Packet Packet, DeliveryMethod DeliveryMethod) : NetEvent;
 
-internal sealed record ErrorEvent(Peer Peer, SocketError Error) : NetEvent;
+internal sealed record RttEvent(Peer Peer, TimeSpan Rtt) : NetEvent;
+
+internal sealed record ErrorEvent(IPEndPoint RemoteEndPoint, SocketError Error) : NetEvent;
 
 internal static class NetEvents
 {
@@ -35,10 +38,15 @@ internal static class NetEvents
     {
         return new ReceiveEvent(peer, packet, deliveryMethod);
     }
-
-    public static ErrorEvent Error(Peer peer, SocketError error)
+    
+    public static RttEvent Rtt(Peer peer, TimeSpan rtt)
     {
-        return new ErrorEvent(peer, error);
+        return new RttEvent(peer, rtt);
+    }
+
+    public static ErrorEvent Error(IPEndPoint remoteEndPoint, SocketError error)
+    {
+        return new ErrorEvent(remoteEndPoint, error);
     }
 }
 
@@ -48,3 +56,16 @@ public enum DeliveryMethod
     Reliable,
     Sequenced
 }
+
+public enum DisconnectReason
+{
+    Unknown,
+    ServerShutdown,
+    Timeout,
+    ConnectionLost,
+    ConnectionRefused,
+    RemoteClose,
+    LocalClose
+}
+
+public record struct DisconnectInfo(DisconnectReason Reason, SocketError? SocketError);

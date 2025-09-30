@@ -2,7 +2,7 @@ using System.Buffers.Binary;
 using System.Runtime.CompilerServices;
 using System.Text;
 
-namespace LogicalPacket.Core;
+namespace PaxNet.Core;
 
 public ref struct PacketWriter(Span<byte> buffer)
 {

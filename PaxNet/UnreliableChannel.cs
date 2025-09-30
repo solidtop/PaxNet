@@ -1,6 +1,6 @@
 using System.Threading.Channels;
 
-namespace LogicalPacket.Core;
+namespace PaxNet.Core;
 
 internal sealed class UnreliableChannel(Server server, Peer peer, int capacity)
 {

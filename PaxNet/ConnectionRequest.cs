@@ -1,6 +1,6 @@
 using System.Net;
 
-namespace LogicalPacket.Core;
+namespace PaxNet.Core;
 
 public class ConnectionRequest
 {

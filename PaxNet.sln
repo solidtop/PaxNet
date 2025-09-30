@@ -1,10 +1,10 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LogicalPacket", "LogicalPacket\LogicalPacket.csproj", "{BE1114A6-312E-46E8-83ED-DA614B3763BE}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PaxNet", "PaxNet\PaxNet.csproj", "{BE1114A6-312E-46E8-83ED-DA614B3763BE}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LogicalPacket.Demo", "LogicalPacket.Demo\LogicalPacket.Demo.csproj", "{3DD8E70F-48AD-44D3-9ACF-B607ABEE0492}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PaxNet.Demo", "PaxNet.Demo\PaxNet.Demo.csproj", "{3DD8E70F-48AD-44D3-9ACF-B607ABEE0492}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LogicalPacket.Tests", "LogicalPacket.Tests\LogicalPacket.Tests.csproj", "{2DE8F7BB-F062-4A22-9343-129C38008021}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PaxNet.Tests", "PaxNet.Tests\PaxNet.Tests.csproj", "{2DE8F7BB-F062-4A22-9343-129C38008021}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

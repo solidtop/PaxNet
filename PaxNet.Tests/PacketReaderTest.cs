@@ -1,8 +1,8 @@
 ﻿using System.Buffers.Binary;
 using System.Text;
-using LogicalPacket.Core;
+using PaxNet.Core;
 
-namespace LogicalPacket.Tests;
+namespace PaxNet.Tests;
 
 public class PacketReaderTest
 {

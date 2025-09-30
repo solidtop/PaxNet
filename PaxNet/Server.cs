@@ -2,15 +2,14 @@
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
-using LogicalPacket.Core;
+using PaxNet.Core;
 
-namespace LogicalPacket;
+namespace PaxNet;
 
 public sealed class Server : IDisposable
 {
     private const int MaxPacketSize = 1024;
 
-    private readonly INetEventListener _eventListener;
     private readonly Socket _socket;
     private readonly MemoryPool<byte> _bufferPool;
     private readonly IPEndPoint _endPointFactory;
@@ -20,12 +19,13 @@ public sealed class Server : IDisposable
     private readonly ConcurrentDictionary<IPEndPoint, SocketAddress> _addressCache;
     private readonly ConcurrentQueue<NetEvent> _eventQueue;
 
+    private readonly Packet _connectAcceptPacket;
+
     private CancellationTokenSource? _cts;
     private Task? _receiveTask;
 
-    public Server(INetEventListener eventListener)
+    public Server()
     {
-        _eventListener = eventListener;
         _socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
         _socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
         _bufferPool = MemoryPool<byte>.Shared;
@@ -35,7 +35,11 @@ public sealed class Server : IDisposable
         _endPointCache = [];
         _addressCache = [];
         _eventQueue = [];
+
+        _connectAcceptPacket = new Packet(PacketType.ConnectAccept);
     }
+
+    public int ConnectedPeers => _peers.Count;
 
     public void Dispose()
     {
@@ -43,9 +47,17 @@ public sealed class Server : IDisposable
         _socket.Dispose();
     }
 
-    public void Start(int port)
+    // Events
+    public event Action<ConnectionRequest>? ConnectionRequested;
+    public event Action<Peer>? PeerConnected;
+    public event Action<Peer, DisconnectInfo>? PeerDisconnected;
+    public event Action<Peer, PacketReader, DeliveryMethod>? PacketReceived;
+    public event Action<Peer, TimeSpan>? RttUpdated;
+    public event Action<IPEndPoint, SocketError>? ErrorOccured;
+
+    public void Start(string address, int port)
     {
-        _socket.Bind(new IPEndPoint(IPAddress.Loopback, port));
+        _socket.Bind(new IPEndPoint(IPAddress.Parse(address), port));
         _cts = new CancellationTokenSource();
 
         _receiveTask = Task.Run(() => ReceiveLoopAsync(_cts.Token));
@@ -74,21 +86,27 @@ public sealed class Server : IDisposable
         while (_eventQueue.TryDequeue(out var netEvent))
             switch (netEvent)
             {
-                case ConnectionRequestEvent connectionRequest:
-                    _eventListener.OnConnectionRequest(connectionRequest.Request);
+                case ConnectionRequestEvent requestEvent:
+                    ConnectionRequested?.Invoke(requestEvent.Request);
                     break;
                 case ConnectEvent connectEvent:
-                    _eventListener.OnPeerConnected(connectEvent.Peer);
+                    PeerConnected?.Invoke(connectEvent.Peer);
                     break;
                 case DisconnectEvent disconnectEvent:
-                    _eventListener.OnPeerDisconnected(disconnectEvent.Peer, disconnectEvent.Info);
+                    PeerDisconnected?.Invoke(disconnectEvent.Peer, disconnectEvent.Info);
                     break;
                 case ReceiveEvent receiveEvent:
                     var reader = new PacketReader(receiveEvent.Packet.Payload.Span);
-                    _eventListener.OnPacketReceived(receiveEvent.Peer, reader, receiveEvent.DeliveryMethod);
+                    PacketReceived?.Invoke(receiveEvent.Peer, reader, receiveEvent.DeliveryMethod);
+                    break;
+                case ErrorEvent errorEvent:
+                    ErrorOccured?.Invoke(errorEvent.RemoteEndPoint, errorEvent.Error);
+                    break;
+                case RttEvent rttEvent:
+                    RttUpdated?.Invoke(rttEvent.Peer, rttEvent.Rtt);
                     break;
                 default:
-                    throw new ArgumentOutOfRangeException($"Unknown netEvent: {nameof(netEvent)}");
+                    throw new ArgumentOutOfRangeException($"Unknown Event: {nameof(netEvent)}");
             }
     }
 
@@ -141,8 +159,7 @@ public sealed class Server : IDisposable
 
         peer.Connect(_cts!.Token);
 
-        var connectAcceptPacket = new Packet(PacketType.ConnectAccept);
-        Send(connectAcceptPacket, remoteEndPoint);
+        Send(_connectAcceptPacket, remoteEndPoint);
 
         EnqueueEvent(NetEvents.Connect(peer));
     }
@@ -158,7 +175,7 @@ public sealed class Server : IDisposable
         DisconnectPeer(peer, new DisconnectInfo(reason, error));
     }
 
-    internal void DisconnectPeer(Peer peer, DisconnectInfo info)
+    private void DisconnectPeer(Peer peer, DisconnectInfo info)
     {
         _peers.TryRemove(peer, out _);
 
@@ -201,6 +218,7 @@ public sealed class Server : IDisposable
             }
             catch (SocketException ex)
             {
+                EnqueueEvent(NetEvents.Error(GetEndPoint(receivedAddress), ex.SocketErrorCode));
                 Console.WriteLine(ex.Message);
             }
     }
@@ -221,7 +239,7 @@ public sealed class Server : IDisposable
                 break;
             default:
                 if (peer != null)
-                    peer.ProcessPacket(packet);
+                    peer.HandlePacket(packet);
                 else
                     packet.Dispose();
                 break;
@@ -230,15 +248,27 @@ public sealed class Server : IDisposable
 
     private void HandleConnectRequest(Packet packet, IPEndPoint remoteEndPoint, Peer? peer)
     {
-        if (peer != null) return;
+        if (peer is { ConnectionState: ConnectionState.Connected })
+        {
+            Send(_connectAcceptPacket, remoteEndPoint);
+            return;
+        }
 
-        var reader = new PacketReader(packet.Payload.Span);
-        var requestPacket = ConnectionRequestPacket.Parse(reader);
-        requestPacket.Payload = packet.Payload[ConnectionRequestPacket.HeaderSize..];
+        ;
 
-        var request = new ConnectionRequest(this, remoteEndPoint, requestPacket);
+        try
+        {
+            var reader = new PacketReader(packet.Payload.Span);
+            var requestPacket = ConnectionRequestPacket.Read(reader);
+            requestPacket.Payload = packet.Payload[ConnectionRequestPacket.HeaderSize..];
 
-        EnqueueEvent(NetEvents.ConnectionRequest(request));
+            var request = new ConnectionRequest(this, remoteEndPoint, requestPacket);
+            EnqueueEvent(NetEvents.ConnectionRequest(request));
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex.Message);
+        }
     }
 
     private void HandleDisconnect(Peer? peer)
