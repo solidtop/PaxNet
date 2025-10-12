@@ -1,44 +1,56 @@
-using System.Net;
-
 namespace PaxNet;
 
-public class ConnectionRequest
+public sealed class ConnectionRequest
 {
-    private readonly Server _server;
-    private readonly IPEndPoint _remoteEndPoint;
-    private readonly ConnectionRequestPacket _packet;
+    private readonly Connection _connection;
+    private readonly Packet _packet;
+    private bool _resolved;
 
-    internal ConnectionRequest(Server server, IPEndPoint remoteEndPoint, ConnectionRequestPacket packet)
+    internal ConnectionRequest(Connection connection, Packet packet)
     {
-        _server = server;
-        _remoteEndPoint = remoteEndPoint;
+        _connection = connection;
         _packet = packet;
     }
 
+    public PacketReader Reader => _packet.Reader;
+
     public void Accept()
     {
-        _server.AcceptConnection(_remoteEndPoint);
-    }
+        if (_resolved) return;
+        _resolved = true;
+        _connection.Accept();
+        _packet.Dispose();
 
-    public void AcceptIfKey(string key)
-    {
-        var reader = new PacketReader(_packet.Payload.Span);
-
-        try
-        {
-            if (reader.ReadString() == key)
-                _server.AcceptConnection(_remoteEndPoint);
-            else
-                _server.RejectConnection(_remoteEndPoint);
-        }
-        catch
-        {
-            Console.WriteLine("Invalid incoming data");
-        }
+        using var acceptPacket = Packet.Create(PacketType.ConnectAccept);
+        _connection.Send(acceptPacket.Data);
     }
 
     public void Reject()
     {
-        _server.RejectConnection(_remoteEndPoint);
+        if (_resolved) return;
+        _resolved = true;
+        _connection.Reject();
+        _packet.Dispose();
+
+        using var rejectPacket = Packet.Create(PacketType.ConnectReject);
+        _connection.Send(rejectPacket.Data);
+    }
+
+    public void AcceptIfKey(string key)
+    {
+        if (_resolved) return;
+
+        try
+        {
+            if (_packet.Reader.ReadString() == key)
+                Accept();
+            else
+                Reject();
+        }
+        catch
+        {
+            Console.WriteLine("Invalid data in connection request");
+            Reject();
+        }
     }
 }

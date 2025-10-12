@@ -1,34 +1,130 @@
-﻿using PaxNet;
+﻿using System.Net;
+using PaxNet;
 
-using var server = new Server();
-using var client = new Client();
+const string key = "MySecretKey";
+var serverEndPoint = new IPEndPoint(IPAddress.Loopback, 5555);
 
-server.ConnectionRequested += request => { request.AcceptIfKey("MyKey"); };
+var server = new Server(serverEndPoint, key);
+var client = new Client(serverEndPoint, key);
 
-server.PeerConnected += peer => { Console.WriteLine($"Peer {peer} connected"); };
-
-server.PeerDisconnected += (peer, info) =>
-{
-    Console.WriteLine($"Peer {peer} disconnected with reason: {info.Reason}");
-};
-
-server.PacketReceived += (peer, packet, deliveryMethod) =>
-{
-    Console.WriteLine($"Packet received from {peer} with method {deliveryMethod}");
-};
-
-server.ErrorOccured += (endPoint, error) =>
-{
-    Console.WriteLine($"Error received from {endPoint} with error {error}");
-};
-
-server.RttUpdated += (peer, rtt) => { Console.WriteLine($"RTT for peer {peer} is {rtt.TotalMilliseconds:F1} ms"); };
-
-server.Start("127.0.0.1", 8000);
-client.Connect("127.0.0.1", 8000);
+server.Start();
+client.Start();
 
 while (!Console.KeyAvailable)
 {
-    server.PollEvents();
-    await Task.Delay(16);
+    server.Update();
+    client.Update();
+}
+
+server.Stop();
+client.Stop();
+
+internal class Server
+{
+    private readonly IPEndPoint _localEndPoint;
+    private readonly string _key;
+    private readonly Host _host;
+
+    public Server(IPEndPoint localEndPoint, string key)
+    {
+        _localEndPoint = localEndPoint;
+        _key = key;
+        _host = new Host();
+        _host.ConnectionRequested += OnConnectionRequested;
+        _host.ClientConnected += OnClientConnected;
+        _host.ClientDisconnected += OnClientDisconnected;
+        _host.RttUpdated += OnRttUpdated;
+    }
+
+    public void Start()
+    {
+        _host.Start(_localEndPoint);
+    }
+
+    public void Stop()
+    {
+        _host.Stop();
+    }
+
+    public void Update()
+    {
+        _host.PollEvents();
+    }
+
+    private void OnConnectionRequested(ConnectionRequest request)
+    {
+        request.AcceptIfKey(_key);
+    }
+
+    private void OnClientConnected(Connection connection)
+    {
+        Print($"Client {connection.RemoteEndPoint} connected.");
+    }
+
+    private void OnClientDisconnected(Connection connection, DisconnectInfo info)
+    {
+        Print($"Client {connection.RemoteEndPoint} disconnected with reason: {info.Reason}.");
+    }
+
+    private void OnRttUpdated(Connection connection, TimeSpan rtt)
+    {
+        Print($"[{connection.RemoteEndPoint}] Ping: {rtt.Milliseconds} ms");
+    }
+
+    private static void Print(string text)
+    {
+        Console.WriteLine($"[SERVER]: {text}");
+    }
+}
+
+internal class Client
+{
+    private readonly IPEndPoint _remoteEndPoint;
+    private readonly string _key;
+    private readonly Host _host;
+
+    public Client(IPEndPoint remoteEndPoint, string key)
+    {
+        _remoteEndPoint = remoteEndPoint;
+        _key = key;
+        _host = new Host();
+        _host.ClientConnected += OnClientConnected;
+        _host.ClientDisconnected += OnClientDisconnected;
+        _host.RttUpdated += OnRttUpdated;
+    }
+
+    public void Start()
+    {
+        _host.Connect(_remoteEndPoint, _key);
+    }
+
+    public void Stop()
+    {
+        _host.Stop();
+    }
+
+    public void Update()
+    {
+        _host.PollEvents();
+    }
+
+    private void OnClientConnected(Connection connection)
+    {
+        Print("Connected.");
+    }
+
+    private void OnClientDisconnected(Connection connection, DisconnectInfo info)
+    {
+        Print($"Disconnected with reason: {info.Reason}.");
+    }
+
+    private void OnRttUpdated(Connection connection, TimeSpan rtt)
+    {
+        Print($"Ping: {rtt.Milliseconds} ms");
+    }
+
+    private static void Print(string text)
+    {
+        Console.WriteLine($"[CLIENT]: {text}");
+    }
 }

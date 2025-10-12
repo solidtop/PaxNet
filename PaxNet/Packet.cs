@@ -1,91 +1,51 @@
 using System.Buffers;
-using System.Buffers.Binary;
+using System.Text;
 
 namespace PaxNet;
 
-internal readonly struct Packet : IDisposable
+internal readonly struct Packet(IMemoryOwner<byte> bufferOwner, int size) : IDisposable
 {
-    private readonly IMemoryOwner<byte>? _bufferOwner;
-    private readonly Memory<byte> _data;
+    public int Size => size;
+    public Span<byte> Data => bufferOwner.Memory.Span[..Size];
+    public PacketType Type => (PacketType)Data[0];
+    public Span<byte> Payload => Data[1..];
 
-    public Packet(IMemoryOwner<byte> bufferOwner, int size)
-    {
-        _bufferOwner = bufferOwner;
-        _data = bufferOwner.Memory[..size];
-    }
-
-    public Packet(PacketType type)
-    {
-        _data = new byte[GetHeaderSize(type)];
-        Type = type;
-    }
-
-    public ReadOnlyMemory<byte> Data => _data;
-
-    public PacketType Type
-    {
-        get => (PacketType)_data.Span[0];
-        set => _data.Span[0] = (byte)value;
-    }
-
-    public ushort Sequence
-    {
-        get => BinaryPrimitives.ReadUInt16LittleEndian(_data.Span.Slice(1, 2));
-        set => BinaryPrimitives.WriteUInt16LittleEndian(_data.Span.Slice(1, 2), value);
-    }
-
-    public Memory<byte> Payload
-    {
-        get => _data[GetHeaderSize(Type)..];
-        set => value.CopyTo(_data[GetHeaderSize(Type)..]);
-    }
-
-    public static int GetHeaderSize(PacketType type)
-    {
-        return type switch
-        {
-            _ => 1
-        };
-    }
+    public PacketReader Reader => new(Payload);
+    public PacketWriter Writer => new(Payload);
 
     public void Dispose()
     {
-        _bufferOwner?.Dispose();
+        bufferOwner.Dispose();
+    }
+
+    public static Packet Create(PacketType type, int payloadSize = 0)
+    {
+        const int headerSize = 1;
+        var totalSize = headerSize + payloadSize;
+        var bufferOwner = MemoryPool<byte>.Shared.Rent(totalSize);
+        var span = bufferOwner.Memory.Span;
+
+        span[0] = (byte)type;
+
+        return new Packet(bufferOwner, totalSize);
+    }
+
+    public static Packet CreateConnectRequest(string key)
+    {
+        var payloadSize = Encoding.UTF8.GetByteCount(key) + 2;
+        var packet = Create(PacketType.ConnectRequest, payloadSize);
+        packet.Writer.WriteString(key);
+
+        return packet;
     }
 }
 
-public enum PacketType : byte
+internal enum PacketType : byte
 {
     ConnectRequest,
     ConnectAccept,
     ConnectReject,
     Disconnect,
-    Shutdown,
-    Unreliable,
     Ping,
     Pong
-}
-
-internal struct ConnectionRequestPacket
-{
-    public const int HeaderSize = 12;
-
-    public uint ConnectionNumber { get; set; }
-    public long ConnectionTime { get; set; }
-    public ReadOnlyMemory<byte> Payload { get; set; }
-
-    public void Write(PacketWriter writer)
-    {
-        writer.WriteUInt32(ConnectionNumber);
-        writer.WriteInt64(ConnectionTime);
-    }
-
-    public static ConnectionRequestPacket Read(PacketReader reader)
-    {
-        return new ConnectionRequestPacket
-        {
-            ConnectionNumber = reader.ReadUInt32(),
-            ConnectionTime = reader.ReadInt64()
-        };
-    }
 }
