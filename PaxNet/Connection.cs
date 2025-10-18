@@ -146,14 +146,14 @@ public sealed class Connection
     {
         using var pingPacket = Packet.Create(PacketType.Ping, sizeof(long));
         pingPacket.Writer.WriteInt64(Stopwatch.GetTimestamp());
-        Transport.Send(pingPacket.Data, RemoteEndPoint);
+        Send(pingPacket.Data);
     }
 
     private void SendPong(Packet pingPacket)
     {
         using var pongPacket = Packet.Create(PacketType.Pong, sizeof(long));
         pongPacket.Writer.WriteInt64(pingPacket.Reader.ReadInt64());
-        Transport.Send(pongPacket.Data, RemoteEndPoint);
+        Send(pongPacket.Data);
     }
 
     private void UpdateRtt(Packet pongPacket)
