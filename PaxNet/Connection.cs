@@ -64,7 +64,7 @@ public sealed class Connection
         {
             ErrorOccurred?.Invoke(this, ex.SocketErrorCode);
 
-            // Close only of fatal error
+            // Close only on fatal error
             if (ex.SocketErrorCode is SocketError.HostUnreachable or SocketError.NetworkUnreachable)
                 Close(DisconnectInfo.TransportError(ex.SocketErrorCode));
         }
