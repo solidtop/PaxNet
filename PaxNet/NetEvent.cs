@@ -1,3 +1,6 @@
+using System.Net;
+using System.Net.Sockets;
+
 namespace PaxNet;
 
 internal abstract record NetEvent;
@@ -10,25 +13,32 @@ internal sealed record DisconnectEvent(Connection Connection, DisconnectInfo Inf
 
 internal sealed record RttEvent(Connection Connection, TimeSpan Rtt) : NetEvent;
 
+internal sealed record ErrorEvent(IPEndPoint RemoteEndPoint, SocketError Error) : NetEvent;
+
 internal static class NetEvents
 {
-    public static NetEvent ConnectionRequest(ConnectionRequest request)
+    public static ConnectionRequestEvent ConnectionRequest(ConnectionRequest request)
     {
         return new ConnectionRequestEvent(request);
     }
 
-    public static NetEvent Connect(Connection connection)
+    public static ConnectEvent Connect(Connection connection)
     {
         return new ConnectEvent(connection);
     }
 
-    public static NetEvent Disconnect(Connection connection, DisconnectInfo info)
+    public static DisconnectEvent Disconnect(Connection connection, DisconnectInfo info)
     {
         return new DisconnectEvent(connection, info);
     }
 
-    public static NetEvent Rtt(Connection connection, TimeSpan rtt)
+    public static RttEvent Rtt(Connection connection, TimeSpan rtt)
     {
         return new RttEvent(connection, rtt);
+    }
+
+    public static ErrorEvent Error(IPEndPoint remoteEndPoint, SocketError error)
+    {
+        return new ErrorEvent(remoteEndPoint, error);
     }
 }

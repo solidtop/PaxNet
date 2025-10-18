@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Net;
+using System.Net.Sockets;
 
 namespace PaxNet;
 
@@ -26,6 +27,7 @@ public sealed class Connection
     public event Action<Connection>? Rejected;
     public event Action<Connection, DisconnectInfo>? Disconnected;
     public event Action<Connection, TimeSpan>? RttUpdated;
+    public event Action<Connection, SocketError>? ErrorOccurred;
 
     public void Disconnect()
     {
@@ -54,7 +56,18 @@ public sealed class Connection
         if (State != ConnectionState.Connected)
             return;
 
-        Transport.Send(data, RemoteEndPoint);
+        try
+        {
+            Transport.Send(data, RemoteEndPoint);
+        }
+        catch (SocketException ex)
+        {
+            ErrorOccurred?.Invoke(this, ex.SocketErrorCode);
+
+            // Close only of fatal error
+            if (ex.SocketErrorCode is SocketError.HostUnreachable or SocketError.NetworkUnreachable)
+                Close(DisconnectInfo.TransportError(ex.SocketErrorCode));
+        }
     }
 
     internal void HandlePacket(Packet packet)
@@ -88,15 +101,6 @@ public sealed class Connection
         packet.Dispose();
     }
 
-    internal void Request(Packet requestPacket)
-    {
-        if (State != ConnectionState.Connecting)
-            return;
-
-        var request = new ConnectionRequest(this, requestPacket);
-        Requested?.Invoke(request);
-    }
-
     internal void Accept()
     {
         if (State != ConnectionState.Connecting)
@@ -127,6 +131,15 @@ public sealed class Connection
         }
 
         if (now - LastReceive > TimeoutInterval) Close(DisconnectInfo.Timeout);
+    }
+
+    private void Request(Packet requestPacket)
+    {
+        if (State != ConnectionState.Connecting)
+            return;
+
+        var request = new ConnectionRequest(this, requestPacket);
+        Requested?.Invoke(request);
     }
 
     private void SendPing()

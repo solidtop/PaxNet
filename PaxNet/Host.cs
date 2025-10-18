@@ -15,7 +15,7 @@ public class Host : IDisposable
 
     private CancellationTokenSource? _cts;
     private Task? _receiveTask;
-    private Task? _maintenanceTask;
+    private Task? _heartbeatTask;
 
     public bool IsRunning { get; private set; }
 
@@ -30,6 +30,7 @@ public class Host : IDisposable
     public event Action<Connection>? ClientConnected;
     public event Action<Connection, DisconnectInfo>? ClientDisconnected;
     public event Action<Connection, TimeSpan>? RttUpdated;
+    public event Action<IPEndPoint, SocketError>? ErrorOccurred;
 
     public void Start(IPEndPoint localEndPoint)
     {
@@ -41,7 +42,7 @@ public class Host : IDisposable
         _transport.Bind(localEndPoint);
         _cts = new CancellationTokenSource();
         _receiveTask = Task.Run(() => ReceiveLoop(_cts.Token));
-        _maintenanceTask = Task.Run(() => MaintenanceLoop(_cts.Token));
+        _heartbeatTask = Task.Run(() => HeartbeatLoop(_cts.Token));
     }
 
     public void Stop()
@@ -53,11 +54,11 @@ public class Host : IDisposable
         IsRunning = false;
         _cts?.Cancel();
         _receiveTask?.Wait();
-        _maintenanceTask?.Wait();
+        _heartbeatTask?.Wait();
         _cts?.Dispose();
         _cts = null;
         _receiveTask = null;
-        _maintenanceTask = null;
+        _heartbeatTask = null;
     }
 
     public void Connect(IPEndPoint remoteEndPoint, string key)
@@ -130,11 +131,12 @@ public class Host : IDisposable
             }
             catch (SocketException ex)
             {
-                Console.WriteLine($"[HOST]: Error receiving packet: {ex}");
+                var remoteEndPoint = GetEndPoint(receivedAddress);
+                ErrorOccurred?.Invoke(remoteEndPoint, ex.SocketErrorCode);
             }
     }
 
-    private async Task MaintenanceLoop(CancellationToken cancellationToken)
+    private async Task HeartbeatLoop(CancellationToken cancellationToken)
     {
         while (!cancellationToken.IsCancellationRequested)
             try
@@ -162,6 +164,7 @@ public class Host : IDisposable
         connection.Rejected += OnConnectionRejected;
         connection.Disconnected += OnConnectionDisconnected;
         connection.RttUpdated += OnRttUpdated;
+        connection.ErrorOccurred += OnErrorOccured;
         _connections.TryAdd(remoteEndPoint, connection);
 
         return connection;
@@ -204,5 +207,10 @@ public class Host : IDisposable
     private void OnRttUpdated(Connection connection, TimeSpan rtt)
     {
         _eventQueue.Enqueue(NetEvents.Rtt(connection, rtt));
+    }
+
+    private void OnErrorOccured(Connection connection, SocketError error)
+    {
+        _eventQueue.Enqueue(NetEvents.Error(connection.RemoteEndPoint, error));
     }
 }

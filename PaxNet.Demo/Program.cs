@@ -1,4 +1,5 @@
 ﻿using System.Net;
+using System.Net.Sockets;
 using PaxNet;
 
 const string key = "MySecretKey";
@@ -34,6 +35,7 @@ internal class Server
         _host.ClientConnected += OnClientConnected;
         _host.ClientDisconnected += OnClientDisconnected;
         _host.RttUpdated += OnRttUpdated;
+        _host.ErrorOccurred += OnErrorOccured;
     }
 
     public void Start()
@@ -69,6 +71,11 @@ internal class Server
     private void OnRttUpdated(Connection connection, TimeSpan rtt)
     {
         Print($"[{connection.RemoteEndPoint}] Ping: {rtt.Milliseconds} ms");
+    }
+
+    private void OnErrorOccured(IPEndPoint endPoint, SocketError error)
+    {
+        Print($"Error: {error}.");
     }
 
     private static void Print(string text)

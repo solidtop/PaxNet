@@ -25,15 +25,7 @@ internal class Transport(int maxPacketSize) : IDisposable
 
     public int Send(ReadOnlySpan<byte> data, IPEndPoint remoteEndPoint)
     {
-        try
-        {
-            return _socket.SendTo(data, SocketFlags.None, remoteEndPoint);
-        }
-        catch (SocketException ex)
-        {
-            Console.WriteLine(ex.Message);
-            return 0;
-        }
+        return _socket.SendTo(data, SocketFlags.None, remoteEndPoint);
     }
 
     public Task<int> SendAsync(ReadOnlyMemory<byte> data, IPEndPoint remoteEndPoint)
