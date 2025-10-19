@@ -29,6 +29,7 @@ public class Host : IDisposable
     public event Action<ConnectionRequest>? ConnectionRequested;
     public event Action<Connection>? ClientConnected;
     public event Action<Connection, DisconnectInfo>? ClientDisconnected;
+    public event Action<Connection, PacketReader>? DataReceived;
     public event Action<Connection, TimeSpan>? RttUpdated;
     public event Action<IPEndPoint, SocketError>? ErrorOccurred;
 
@@ -94,8 +95,15 @@ public class Host : IDisposable
                 case DisconnectEvent disconnectEvent:
                     ClientDisconnected?.Invoke(disconnectEvent.Connection, disconnectEvent.Info);
                     break;
+                case ReceiveEvent receiveEvent:
+                    DataReceived?.Invoke(receiveEvent.Connection, receiveEvent.Packet.Reader);
+                    receiveEvent.Packet.Dispose();
+                    break;
                 case RttEvent rttEvent:
                     RttUpdated?.Invoke(rttEvent.Connection, rttEvent.Rtt);
+                    break;
+                case ErrorEvent errorEvent:
+                    ErrorOccurred?.Invoke(errorEvent.RemoteEndPoint, errorEvent.Error);
                     break;
                 default:
                     throw new ArgumentOutOfRangeException(nameof(netEvent));
@@ -163,6 +171,7 @@ public class Host : IDisposable
         connection.Accepted += OnConnectionAccepted;
         connection.Rejected += OnConnectionRejected;
         connection.Disconnected += OnConnectionDisconnected;
+        connection.DataReceived += OnDataReceived;
         connection.RttUpdated += OnRttUpdated;
         connection.ErrorOccurred += OnErrorOccured;
         _connections.TryAdd(remoteEndPoint, connection);
@@ -202,6 +211,11 @@ public class Host : IDisposable
     {
         _connections.TryRemove(connection.RemoteEndPoint, out _);
         _eventQueue.Enqueue(NetEvents.Disconnect(connection, info));
+    }
+
+    private void OnDataReceived(Connection connection, Packet packet)
+    {
+        _eventQueue.Enqueue(NetEvents.Receive(connection, packet));
     }
 
     private void OnRttUpdated(Connection connection, TimeSpan rtt)

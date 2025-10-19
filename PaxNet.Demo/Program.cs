@@ -34,6 +34,7 @@ internal class Server
         _host.ConnectionRequested += OnConnectionRequested;
         _host.ClientConnected += OnClientConnected;
         _host.ClientDisconnected += OnClientDisconnected;
+        _host.DataReceived += OnDataReceived;
         _host.RttUpdated += OnRttUpdated;
         _host.ErrorOccurred += OnErrorOccured;
     }
@@ -61,6 +62,13 @@ internal class Server
     private void OnClientConnected(Connection connection)
     {
         Print($"Client {connection.RemoteEndPoint} connected.");
+
+        var data = new byte[40];
+
+        var writer = new PacketWriter(data);
+        writer.WriteString("Hello there client!");
+
+        connection.Send(writer.Data, Delivery.Unreliable);
     }
 
     private void OnClientDisconnected(Connection connection, DisconnectInfo info)
@@ -68,9 +76,15 @@ internal class Server
         Print($"Client {connection.RemoteEndPoint} disconnected with reason: {info.Reason}.");
     }
 
+    private void OnDataReceived(Connection connection, PacketReader reader)
+    {
+        var greeting = reader.ReadString();
+        Print($"{greeting} from {connection.RemoteEndPoint}");
+    }
+
     private void OnRttUpdated(Connection connection, TimeSpan rtt)
     {
-        Print($"[{connection.RemoteEndPoint}] Ping: {rtt.Milliseconds} ms");
+        //Print($"[{connection.RemoteEndPoint}] Ping: {rtt.Milliseconds} ms");
     }
 
     private void OnErrorOccured(IPEndPoint endPoint, SocketError error)
@@ -97,6 +111,7 @@ internal class Client
         _host = new Host();
         _host.ClientConnected += OnClientConnected;
         _host.ClientDisconnected += OnClientDisconnected;
+        _host.DataReceived += OnDataReceived;
         _host.RttUpdated += OnRttUpdated;
     }
 
@@ -125,9 +140,20 @@ internal class Client
         Print($"Disconnected with reason: {info.Reason}.");
     }
 
+    private void OnDataReceived(Connection connection, PacketReader reader)
+    {
+        var greeting = reader.ReadString();
+        Print(greeting);
+
+        var data = new byte[40];
+        var writer = new PacketWriter(data);
+        writer.WriteString("Hello there server!");
+        connection.Send(writer.Data, Delivery.Unreliable);
+    }
+
     private void OnRttUpdated(Connection connection, TimeSpan rtt)
     {
-        Print($"Ping: {rtt.Milliseconds} ms");
+        //Print($"Ping: {rtt.Milliseconds} ms");
     }
 
     private static void Print(string text)

@@ -11,6 +11,8 @@ internal sealed record ConnectEvent(Connection Connection) : NetEvent;
 
 internal sealed record DisconnectEvent(Connection Connection, DisconnectInfo Info) : NetEvent;
 
+internal sealed record ReceiveEvent(Connection Connection, Packet Packet) : NetEvent;
+
 internal sealed record RttEvent(Connection Connection, TimeSpan Rtt) : NetEvent;
 
 internal sealed record ErrorEvent(IPEndPoint RemoteEndPoint, SocketError Error) : NetEvent;
@@ -30,6 +32,11 @@ internal static class NetEvents
     public static DisconnectEvent Disconnect(Connection connection, DisconnectInfo info)
     {
         return new DisconnectEvent(connection, info);
+    }
+
+    public static ReceiveEvent Receive(Connection connection, Packet packet)
+    {
+        return new ReceiveEvent(connection, packet);
     }
 
     public static RttEvent Rtt(Connection connection, TimeSpan rtt)

@@ -6,6 +6,8 @@ namespace PaxNet;
 
 public sealed class Connection
 {
+    private readonly Dictionary<int, Channel> _channels = [];
+
     internal Connection(Transport transport, IPEndPoint remoteEndPoint)
     {
         Transport = transport;
@@ -22,12 +24,13 @@ public sealed class Connection
     public DateTime LastSend { get; private set; }
     public DateTime LastReceive { get; private set; }
 
-    public event Action<ConnectionRequest>? Requested;
-    public event Action<Connection>? Accepted;
-    public event Action<Connection>? Rejected;
-    public event Action<Connection, DisconnectInfo>? Disconnected;
-    public event Action<Connection, TimeSpan>? RttUpdated;
-    public event Action<Connection, SocketError>? ErrorOccurred;
+    internal event Action<ConnectionRequest>? Requested;
+    internal event Action<Connection>? Accepted;
+    internal event Action<Connection>? Rejected;
+    internal event Action<Connection, DisconnectInfo>? Disconnected;
+    internal event Action<Connection, Packet>? DataReceived;
+    internal event Action<Connection, TimeSpan>? RttUpdated;
+    internal event Action<Connection, SocketError>? ErrorOccurred;
 
     public void Disconnect()
     {
@@ -51,7 +54,18 @@ public sealed class Connection
         // Free resources etc..
     }
 
-    public void Send(ReadOnlySpan<byte> data)
+    public void Send(ReadOnlySpan<byte> data, Delivery delivery, byte channelId = 0)
+    {
+        if (!_channels.TryGetValue(channelId, out var channel))
+        {
+            channel = Channel.Create(channelId, delivery);
+            _channels.TryAdd(channelId, channel);
+        }
+
+        channel.EnqueueOutbound(data, delivery);
+    }
+
+    internal void Send(ReadOnlySpan<byte> data)
     {
         if (State != ConnectionState.Connected)
             return;
@@ -77,7 +91,7 @@ public sealed class Connection
         switch (packet.Type)
         {
             case PacketType.ConnectRequest:
-                Request(packet);
+                HandleRequest(packet);
                 return;
             case PacketType.ConnectAccept:
                 Accept();
@@ -94,6 +108,9 @@ public sealed class Connection
             case PacketType.Pong:
                 UpdateRtt(packet);
                 break;
+            case PacketType.Data:
+                HandleData(packet);
+                return;
             default:
                 throw new ArgumentOutOfRangeException($"Unknown packet type {packet.Type}");
         }
@@ -133,13 +150,26 @@ public sealed class Connection
         if (now - LastReceive > TimeoutInterval) Close(DisconnectInfo.Timeout);
     }
 
-    private void Request(Packet requestPacket)
+    private void HandleRequest(Packet requestPacket)
     {
         if (State != ConnectionState.Connecting)
             return;
 
         var request = new ConnectionRequest(this, requestPacket);
         Requested?.Invoke(request);
+    }
+
+    private void HandleData(Packet packet)
+    {
+        var flags = packet.Flags;
+
+        if (flags.HasFlag(PacketFlags.Reliable) || flags.HasFlag(PacketFlags.Ordered))
+        {
+        }
+        else
+        {
+            DataReceived?.Invoke(this, packet);
+        }
     }
 
     private void SendPing()
