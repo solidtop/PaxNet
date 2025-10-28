@@ -15,7 +15,7 @@ public class Host : IDisposable
 
     private CancellationTokenSource? _cts;
     private Task? _receiveTask;
-    private Task? _heartbeatTask;
+    private Task? _updateTask;
 
     public bool IsRunning { get; private set; }
 
@@ -43,7 +43,7 @@ public class Host : IDisposable
         _transport.Bind(localEndPoint);
         _cts = new CancellationTokenSource();
         _receiveTask = Task.Run(() => ReceiveLoop(_cts.Token));
-        _heartbeatTask = Task.Run(() => HeartbeatLoop(_cts.Token));
+        _updateTask = Task.Run(() => UpdateLoop(_cts.Token));
     }
 
     public void Stop()
@@ -55,11 +55,11 @@ public class Host : IDisposable
         IsRunning = false;
         _cts?.Cancel();
         _receiveTask?.Wait();
-        _heartbeatTask?.Wait();
+        _updateTask?.Wait();
         _cts?.Dispose();
         _cts = null;
         _receiveTask = null;
-        _heartbeatTask = null;
+        _updateTask = null;
     }
 
     public void Connect(IPEndPoint remoteEndPoint, string key)
@@ -144,7 +144,7 @@ public class Host : IDisposable
             }
     }
 
-    private async Task HeartbeatLoop(CancellationToken cancellationToken)
+    private async Task UpdateLoop(CancellationToken cancellationToken)
     {
         while (!cancellationToken.IsCancellationRequested)
             try
@@ -152,9 +152,9 @@ public class Host : IDisposable
                 var now = DateTime.UtcNow;
 
                 foreach (var connection in _connections.Values)
-                    connection.KeepAlive(now);
+                    connection.Update(now);
 
-                await Task.Delay(1000, cancellationToken);
+                await Task.Delay(15, cancellationToken);
             }
             catch (OperationCanceledException)
             {

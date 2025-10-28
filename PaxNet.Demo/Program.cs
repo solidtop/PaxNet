@@ -68,7 +68,7 @@ internal class Server
         var writer = new PacketWriter(data);
         writer.WriteString("Hello there client!");
 
-        connection.Send(writer.Data, Delivery.Unreliable);
+        for (var i = 0; i < 100; i++) connection.Send(writer.Data, Delivery.Reliable);
     }
 
     private void OnClientDisconnected(Connection connection, DisconnectInfo info)

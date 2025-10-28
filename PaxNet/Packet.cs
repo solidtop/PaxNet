@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Buffers.Binary;
 using System.Text;
 
 namespace PaxNet;
@@ -9,7 +10,9 @@ internal readonly struct Packet(IMemoryOwner<byte> bufferOwner, int size) : IDis
     public Span<byte> Data => bufferOwner.Memory.Span[..Size];
     public PacketType Type => (PacketType)Data[0];
     public PacketFlags Flags => (PacketFlags)Data[1];
-    public Span<byte> Payload => Data[HeaderSize..];
+    public byte ChannelId => Data[2];
+    public ushort Sequence => BinaryPrimitives.ReadUInt16LittleEndian(Data.Slice(3, 2));
+    public Span<byte> Payload => Data[GetHeaderSize(Type)..];
 
     public PacketReader Reader => new(Payload);
     public PacketWriter Writer => new(Payload);
@@ -19,15 +22,18 @@ internal readonly struct Packet(IMemoryOwner<byte> bufferOwner, int size) : IDis
         bufferOwner.Dispose();
     }
 
-    public static Packet CreateData(PacketFlags flags, ReadOnlySpan<byte> payload)
+    public static Packet CreateData(PacketFlags flags, ReadOnlySpan<byte> payload, byte channelId = 0,
+        ushort sequence = 0)
     {
-        const int headerSize = 2;
+        var headerSize = GetHeaderSize(PacketType.Data);
         var totalSize = headerSize + payload.Length;
         var bufferOwner = MemoryPool<byte>.Shared.Rent(totalSize);
         var span = bufferOwner.Memory.Span;
 
         span[0] = (byte)PacketType.Data;
         span[1] = (byte)flags;
+        span[2] = channelId;
+        BinaryPrimitives.WriteUInt16LittleEndian(span.Slice(3, 2), sequence);
 
         payload.CopyTo(span[headerSize..]);
 
@@ -36,7 +42,7 @@ internal readonly struct Packet(IMemoryOwner<byte> bufferOwner, int size) : IDis
 
     public static Packet Create(PacketType type, int payloadSize = 0)
     {
-        const int headerSize = 1;
+        var headerSize = GetHeaderSize(type);
         var totalSize = headerSize + payloadSize;
         var bufferOwner = MemoryPool<byte>.Shared.Rent(totalSize);
         var span = bufferOwner.Memory.Span;
@@ -55,11 +61,29 @@ internal readonly struct Packet(IMemoryOwner<byte> bufferOwner, int size) : IDis
         return packet;
     }
 
-    private int HeaderSize => Type switch
+    public static Packet CreateAck(byte channelId, ushort sequence)
     {
-        PacketType.Data => 2,
-        _ => 1
-    };
+        var headerSize = GetHeaderSize(PacketType.Ack);
+        var bufferOwner = MemoryPool<byte>.Shared.Rent(headerSize);
+        var span = bufferOwner.Memory.Span;
+
+        span[0] = (byte)PacketType.Ack;
+        span[1] = (byte)PacketFlags.None;
+        span[2] = channelId;
+        BinaryPrimitives.WriteUInt16LittleEndian(span.Slice(3, 2), sequence);
+
+        return new Packet(bufferOwner, headerSize);
+    }
+
+    private static int GetHeaderSize(PacketType type)
+    {
+        return type switch
+        {
+            PacketType.Data => 6,
+            PacketType.Ack => 6,
+            _ => 1
+        };
+    }
 }
 
 internal enum PacketType : byte
@@ -70,7 +94,8 @@ internal enum PacketType : byte
     Disconnect,
     Ping,
     Pong,
-    Data
+    Data,
+    Ack
 }
 
 [Flags]

@@ -62,7 +62,7 @@ public sealed class Connection
             _channels.TryAdd(channelId, channel);
         }
 
-        channel.EnqueueOutbound(data, delivery);
+        channel.Send(data);
     }
 
     internal void Send(ReadOnlySpan<byte> data)
@@ -111,6 +111,9 @@ public sealed class Connection
             case PacketType.Data:
                 HandleData(packet);
                 return;
+            case PacketType.Ack:
+                HandleAck(packet);
+                break;
             default:
                 throw new ArgumentOutOfRangeException($"Unknown packet type {packet.Type}");
         }
@@ -150,6 +153,20 @@ public sealed class Connection
         if (now - LastReceive > TimeoutInterval) Close(DisconnectInfo.Timeout);
     }
 
+    internal void Update(DateTime now)
+    {
+        KeepAlive(now);
+
+        foreach (var channel in _channels.Values)
+            channel.Process(now, packet =>
+            {
+                if (packet.Type == PacketType.Ack) Console.WriteLine("Sending ack");
+                else Console.WriteLine("Sending data");
+
+                Send(packet.Data);
+            });
+    }
+
     private void HandleRequest(Packet requestPacket)
     {
         if (State != ConnectionState.Connecting)
@@ -162,13 +179,24 @@ public sealed class Connection
     private void HandleData(Packet packet)
     {
         var flags = packet.Flags;
+        var channelId = packet.ChannelId;
 
-        if (flags.HasFlag(PacketFlags.Reliable) || flags.HasFlag(PacketFlags.Ordered))
+        if (!_channels.TryGetValue(channelId, out var channel))
         {
+            channel = Channel.Create(channelId, flags);
+            _channels.TryAdd(channelId, channel);
         }
-        else
+
+        channel.Receive(packet, p => DataReceived?.Invoke(this, p));
+    }
+
+    private void HandleAck(Packet packet)
+    {
+        if (_channels.TryGetValue(packet.ChannelId, out var channel))
         {
-            DataReceived?.Invoke(this, packet);
+            var seq = packet.Sequence;
+            channel.ReceiveAck(seq);
+            Console.WriteLine("Ack received for seq: " + seq);
         }
     }
 

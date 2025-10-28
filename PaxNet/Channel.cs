@@ -1,34 +1,28 @@
-using System.Collections.Concurrent;
-
 namespace PaxNet;
 
 internal abstract class Channel(byte id)
 {
-    protected readonly ConcurrentQueue<Packet> InboundQueue = [];
-    protected readonly ConcurrentQueue<Packet> OutboundQueue = [];
-
     public byte Id => id;
 
-    public void EnqueueInbound(Packet packet)
-    {
-        InboundQueue.Enqueue(packet);
-    }
-
-    public void EnqueueOutbound(ReadOnlySpan<byte> data, Delivery delivery)
-    {
-        var flags = delivery switch
-        {
-            _ => PacketFlags.None
-        };
-
-        var packet = Packet.CreateData(flags, data);
-        OutboundQueue.Enqueue(packet);
-    }
+    public abstract void Send(ReadOnlySpan<byte> payload);
+    public abstract void Receive(Packet packet, Action<Packet> deliver);
+    public abstract void ReceiveAck(ushort sequence);
+    public abstract void Process(DateTime now, Action<Packet> callback);
 
     public static Channel Create(byte channelId, Delivery delivery)
     {
         return delivery switch
         {
+            Delivery.Reliable => new ReliableChannel(channelId),
+            _ => new UnreliableChannel(channelId)
+        };
+    }
+
+    public static Channel Create(byte channelId, PacketFlags flags)
+    {
+        return flags switch
+        {
+            PacketFlags.Reliable => new ReliableChannel(channelId),
             _ => new UnreliableChannel(channelId)
         };
     }

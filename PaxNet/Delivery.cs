@@ -2,5 +2,6 @@ namespace PaxNet;
 
 public enum Delivery
 {
-    Unreliable
+    Unreliable,
+    Reliable
 }
