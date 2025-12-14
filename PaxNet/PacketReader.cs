@@ -98,5 +98,6 @@ public ref struct PacketReader(ReadOnlySpan<byte> buffer)
         return Encoding.UTF8.GetString(value);
     }
 
+    public int Length => _buffer.Length;
     public bool EndOfBuffer => _position == _buffer.Length;
 }

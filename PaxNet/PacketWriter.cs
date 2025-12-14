@@ -4,10 +4,10 @@ using System.Text;
 
 namespace PaxNet;
 
-public ref struct PacketWriter(Span<byte> buffer)
+public ref struct PacketWriter(Span<byte> buffer, int position = 0)
 {
     private readonly Span<byte> _buffer = buffer;
-    private int _position = 0;
+    private int _position = position;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void WriteByte(byte value)

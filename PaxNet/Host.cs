@@ -1,49 +1,61 @@
+using System.Buffers;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 
 namespace PaxNet;
 
-public class Host : IDisposable
+public class Host(IConnectionListener listener) : IDisposable
 {
-    private readonly Transport _transport = new(1024);
-
+    private readonly Socket _socket = new(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
     private readonly ConcurrentDictionary<IPEndPoint, Connection> _connections = [];
-    private readonly Dictionary<SocketAddress, IPEndPoint> _endpointCache = [];
-    private readonly ConcurrentQueue<NetEvent> _eventQueue = [];
+    private readonly ConcurrentQueue<Event> _eventQueue = [];
+    private readonly Dictionary<SocketAddress, IPEndPoint> _endPointCache = [];
     private readonly IPEndPoint _endPointFactory = new(IPAddress.Any, 0);
+    private readonly Stopwatch _stopwatch = new();
 
-    private CancellationTokenSource? _cts;
-    private Task? _receiveTask;
-    private Task? _updateTask;
+    private Thread? _receiveThread;
+    private Thread? _updateThread;
 
     public bool IsRunning { get; private set; }
+
+    public int MaxPacketSize { get; set; } = 1500;
+    public TimeSpan UpdateInterval { get; set; } = TimeSpan.FromMilliseconds(15);
+    public TimeSpan KeepAliveInterval { get; set; } = TimeSpan.FromSeconds(3);
+    public TimeSpan TimeoutInterval { get; set; } = TimeSpan.FromSeconds(15);
 
     public void Dispose()
     {
         GC.SuppressFinalize(this);
         Stop();
-        _transport.Dispose();
+        _socket.Dispose();
     }
-
-    public event Action<ConnectionRequest>? ConnectionRequested;
-    public event Action<Connection>? ClientConnected;
-    public event Action<Connection, DisconnectInfo>? ClientDisconnected;
-    public event Action<Connection, PacketReader>? DataReceived;
-    public event Action<Connection, TimeSpan>? RttUpdated;
-    public event Action<IPEndPoint, SocketError>? ErrorOccurred;
 
     public void Start(IPEndPoint localEndPoint)
     {
         if (IsRunning)
             return;
 
-        Console.WriteLine($"[HOST]: Starting on {localEndPoint}.");
         IsRunning = true;
-        _transport.Bind(localEndPoint);
-        _cts = new CancellationTokenSource();
-        _receiveTask = Task.Run(() => ReceiveLoop(_cts.Token));
-        _updateTask = Task.Run(() => UpdateLoop(_cts.Token));
+        _socket.Bind(localEndPoint);
+        _socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+
+        _receiveThread = new Thread(ReceiveLoop)
+        {
+            Name = "ReceiveLoop",
+            IsBackground = true
+        };
+
+        _updateThread = new Thread(UpdateLoop)
+        {
+            Name = "UpdateLoop",
+            IsBackground = true
+        };
+
+        _stopwatch.Start();
+        _receiveThread.Start();
+        _updateThread.Start();
     }
 
     public void Stop()
@@ -51,85 +63,136 @@ public class Host : IDisposable
         if (!IsRunning)
             return;
 
-        Console.WriteLine("[HOST]: Stopping..");
         IsRunning = false;
-        _cts?.Cancel();
-        _receiveTask?.Wait();
-        _updateTask?.Wait();
-        _cts?.Dispose();
-        _cts = null;
-        _receiveTask = null;
-        _updateTask = null;
+        _stopwatch.Stop();
+        _receiveThread?.Join();
+        _updateThread?.Join();
+        _receiveThread = null;
+        _updateThread = null;
     }
 
-    public void Connect(IPEndPoint remoteEndPoint, string key)
+    public Connection Connect(IPEndPoint remoteEndPoint, string key)
     {
-        Console.WriteLine($"[HOST]: Connecting to {remoteEndPoint}.");
-
         var localEndPoint = new IPEndPoint(IPAddress.Any, 0);
         Start(localEndPoint);
 
-        var connection = EnsureConnection(remoteEndPoint);
-        _connections.TryAdd(remoteEndPoint, connection);
+        using var requestPacket = Packet.CreateConnectionRequest(key);
+        SendTo(requestPacket.Data, remoteEndPoint);
 
-        using var requestPacket = Packet.CreateConnectRequest(key);
-        _transport.Send(requestPacket.Data, remoteEndPoint);
+        return EnsureConnection(remoteEndPoint);
     }
 
-    public void DisconnectAll()
+    public void Disconnect()
     {
-        foreach (var connection in _connections.Values) connection.Disconnect();
+        foreach (var connection in _connections.Values)
+            connection.Disconnect();
     }
 
-    public void PollEvents()
+    public int SendTo(ReadOnlySpan<byte> data, IPEndPoint remoteEndPoint)
     {
-        while (_eventQueue.TryDequeue(out var netEvent))
-            switch (netEvent)
+        return _socket.SendTo(data, remoteEndPoint);
+    }
+
+    public void SendToAll(ReadOnlySpan<byte> data, DeliveryMethod deliveryMethod)
+    {
+        foreach (var connection in _connections.Values)
+            connection.Send(data, deliveryMethod);
+    }
+
+    public void Poll()
+    {
+        while (_eventQueue.TryDequeue(out var @event))
+            switch (@event)
             {
                 case ConnectionRequestEvent requestEvent:
-                    ConnectionRequested?.Invoke(requestEvent.Request);
+                    listener.OnConnectionRequested(requestEvent.Request);
                     break;
                 case ConnectEvent connectEvent:
-                    ClientConnected?.Invoke(connectEvent.Connection);
+                    listener.OnConnected(connectEvent.Connection);
                     break;
                 case DisconnectEvent disconnectEvent:
-                    ClientDisconnected?.Invoke(disconnectEvent.Connection, disconnectEvent.Info);
+                    listener.OnDisconnected(disconnectEvent.Connection, disconnectEvent.Reason);
                     break;
                 case ReceiveEvent receiveEvent:
-                    DataReceived?.Invoke(receiveEvent.Connection, receiveEvent.Packet.Reader);
+                    listener.OnDataReceived(receiveEvent.Connection, receiveEvent.Packet.Reader,
+                        receiveEvent.DeliveryMethod);
                     receiveEvent.Packet.Dispose();
                     break;
                 case RttEvent rttEvent:
-                    RttUpdated?.Invoke(rttEvent.Connection, rttEvent.Rtt);
+                    listener.OnRttUpdated(rttEvent.Connection, rttEvent.Rtt);
                     break;
                 case ErrorEvent errorEvent:
-                    ErrorOccurred?.Invoke(errorEvent.RemoteEndPoint, errorEvent.Error);
+                    listener.OnErrorOccured(errorEvent.RemoteEndPoint, errorEvent.Error);
                     break;
                 default:
-                    throw new ArgumentOutOfRangeException(nameof(netEvent));
+                    throw new ArgumentOutOfRangeException(nameof(@event));
             }
     }
 
-    private async Task ReceiveLoop(CancellationToken cancellationToken)
+    internal void OnConnectionRequested(ConnectionRequest request)
     {
-        var receivedAddress = new SocketAddress(_transport.AddressFamily);
+        _eventQueue.Enqueue(Events.ConnectionRequest(request));
+    }
 
-        while (!cancellationToken.IsCancellationRequested)
+    internal void OnConnectionAccepted(Connection connection)
+    {
+        _eventQueue.Enqueue(Events.Connect(connection));
+    }
+
+    internal void OnConnectionRejected(Connection connection)
+    {
+        _connections.TryRemove(connection.RemoteEndPoint, out _);
+        _eventQueue.Enqueue(Events.Disconnect(connection, DisconnectReason.Reject));
+    }
+
+    internal void OnConnectionClosed(Connection connection, DisconnectReason reason)
+    {
+        _connections.TryRemove(connection.RemoteEndPoint, out _);
+        _eventQueue.Enqueue(Events.Disconnect(connection, reason));
+    }
+
+    internal void OnDataReceived(Connection connection, Packet packet, DeliveryMethod deliveryMethod)
+    {
+        _eventQueue.Enqueue(Events.Receive(connection, packet, deliveryMethod));
+    }
+
+    internal void OnRttUpdated(Connection connection, TimeSpan rtt)
+    {
+        _eventQueue.Enqueue(Events.Rtt(connection, rtt));
+    }
+
+    internal void OnErrorOccured(Connection connection, SocketError error)
+    {
+        _eventQueue.Enqueue(Events.Error(connection.RemoteEndPoint, error));
+    }
+
+    private Packet ReceivePacketFrom(SocketAddress address)
+    {
+        var buffer = ArrayPool<byte>.Shared.Rent(MaxPacketSize);
+        var bytesReceived = _socket.ReceiveFrom(buffer, SocketFlags.None, address);
+        return new Packet(buffer, bytesReceived);
+    }
+
+    private void ReceiveLoop()
+    {
+        var address = new SocketAddress(_socket.AddressFamily);
+
+        while (IsRunning)
             try
             {
-                var packet = await _transport.ReceiveAsync(receivedAddress, cancellationToken);
+                var packet = ReceivePacketFrom(address);
 
-                if (packet.Size == 0)
+                if (packet.IsEmpty)
                 {
                     packet.Dispose();
                     continue;
                 }
 
-                var remoteEndPoint = GetEndPoint(receivedAddress);
+                var remoteEndPoint = GetEndPoint(address);
                 var connection = EnsureConnection(remoteEndPoint);
-                connection.HandlePacket(packet);
+                connection.HandlePacket(packet, _stopwatch.Elapsed);
             }
-            catch (OperationCanceledException)
+            catch (ThreadAbortException)
             {
                 break;
             }
@@ -139,92 +202,68 @@ public class Host : IDisposable
             }
             catch (SocketException ex)
             {
-                var remoteEndPoint = GetEndPoint(receivedAddress);
-                ErrorOccurred?.Invoke(remoteEndPoint, ex.SocketErrorCode);
+                var remoteEndPoint = GetEndPoint(address);
+                listener.OnErrorOccured(remoteEndPoint, ex.SocketErrorCode);
             }
     }
 
-    private async Task UpdateLoop(CancellationToken cancellationToken)
+    private void UpdateLoop()
     {
-        while (!cancellationToken.IsCancellationRequested)
+        var nextTick = _stopwatch.Elapsed;
+
+        while (IsRunning)
             try
             {
-                var now = DateTime.UtcNow;
+                var elapsed = _stopwatch.Elapsed;
 
-                foreach (var connection in _connections.Values)
-                    connection.Update(now);
+                if (elapsed >= nextTick)
+                {
+                    foreach (var connection in _connections.Values)
+                        connection.Update(elapsed);
 
-                await Task.Delay(15, cancellationToken);
+                    nextTick += UpdateInterval;
+
+                    if (elapsed > nextTick)
+                        nextTick = elapsed;
+                }
+                else
+                {
+                    var msTimeout = (int)(nextTick - elapsed).TotalMilliseconds;
+                    if (msTimeout > 0) Thread.Sleep(msTimeout);
+                }
             }
-            catch (OperationCanceledException)
+            catch (ThreadAbortException)
             {
                 break;
             }
     }
 
-    private Connection EnsureConnection(IPEndPoint remoteEndPoint)
-    {
-        if (_connections.TryGetValue(remoteEndPoint, out var connection)) return connection;
-
-        connection = new Connection(_transport, remoteEndPoint);
-        connection.Requested += OnConnectionRequested;
-        connection.Accepted += OnConnectionAccepted;
-        connection.Rejected += OnConnectionRejected;
-        connection.Disconnected += OnConnectionDisconnected;
-        connection.DataReceived += OnDataReceived;
-        connection.RttUpdated += OnRttUpdated;
-        connection.ErrorOccurred += OnErrorOccured;
-        _connections.TryAdd(remoteEndPoint, connection);
-
-        return connection;
-    }
-
     private IPEndPoint GetEndPoint(SocketAddress address)
     {
-        if (_endpointCache.TryGetValue(address, out var endpoint)) return endpoint;
+        if (_endPointCache.TryGetValue(address, out var endPoint))
+            return endPoint;
 
-        endpoint = (IPEndPoint)_endPointFactory.Create(address);
+        endPoint = (IPEndPoint)_endPointFactory.Create(address);
 
         var addressCopy = new SocketAddress(address.Family, address.Size);
         address.Buffer.CopyTo(addressCopy.Buffer);
-        _endpointCache.TryAdd(address, endpoint);
+        _endPointCache.TryAdd(address, endPoint);
 
-        return endpoint;
+        return endPoint;
     }
 
-    private void OnConnectionRequested(ConnectionRequest request)
+    private Connection EnsureConnection(IPEndPoint remoteEndPoint)
     {
-        _eventQueue.Enqueue(NetEvents.ConnectionRequest(request));
-    }
+        if (_connections.TryGetValue(remoteEndPoint, out var connection))
+            return connection;
 
-    private void OnConnectionAccepted(Connection connection)
-    {
-        _eventQueue.Enqueue(NetEvents.Connect(connection));
-    }
+        connection = new Connection(this, remoteEndPoint)
+        {
+            KeepAliveInterval = KeepAliveInterval,
+            TimeoutInterval = TimeoutInterval
+        };
 
-    private void OnConnectionRejected(Connection connection)
-    {
-        _connections.TryRemove(connection.RemoteEndPoint, out _);
-    }
-
-    private void OnConnectionDisconnected(Connection connection, DisconnectInfo info)
-    {
-        _connections.TryRemove(connection.RemoteEndPoint, out _);
-        _eventQueue.Enqueue(NetEvents.Disconnect(connection, info));
-    }
-
-    private void OnDataReceived(Connection connection, Packet packet)
-    {
-        _eventQueue.Enqueue(NetEvents.Receive(connection, packet));
-    }
-
-    private void OnRttUpdated(Connection connection, TimeSpan rtt)
-    {
-        _eventQueue.Enqueue(NetEvents.Rtt(connection, rtt));
-    }
-
-    private void OnErrorOccured(Connection connection, SocketError error)
-    {
-        _eventQueue.Enqueue(NetEvents.Error(connection.RemoteEndPoint, error));
+        _connections[remoteEndPoint] = connection;
+        return connection;
     }
 }

@@ -4,105 +4,115 @@ using System.Text;
 
 namespace PaxNet;
 
-internal readonly struct Packet(IMemoryOwner<byte> bufferOwner, int size) : IDisposable
+internal class Packet(byte[] buffer, int length) : IDisposable
 {
-    public int Size => size;
-    public Span<byte> Data => bufferOwner.Memory.Span[..Size];
-    public PacketType Type => (PacketType)Data[0];
-    public PacketFlags Flags => (PacketFlags)Data[1];
-    public byte ChannelId => Data[2];
-    public ushort Sequence => BinaryPrimitives.ReadUInt16LittleEndian(Data.Slice(3, 2));
-    public Span<byte> Payload => Data[GetHeaderSize(Type)..];
+    public const int HeaderLength = 4;
+
+    public byte[] Buffer => buffer;
+    public int Length => length;
+    public bool IsEmpty => Length == 0;
+    public ReadOnlySpan<byte> Data => Buffer.AsSpan(0, Length);
+    public ReadOnlySpan<byte> Payload => Data[HeaderLength..];
 
     public PacketReader Reader => new(Payload);
-    public PacketWriter Writer => new(Payload);
+    public PacketWriter Writer => new(Buffer, HeaderLength);
+
+    public PacketType Type
+    {
+        get => (PacketType)Buffer[0];
+        set => Buffer[0] = (byte)value;
+    }
+
+    public byte ChannelId
+    {
+        get => Buffer[1];
+        set => Buffer[1] = value;
+    }
+
+    public ushort Sequence
+    {
+        get => BinaryPrimitives.ReadUInt16LittleEndian(Buffer.AsSpan(2, 2));
+        set => BinaryPrimitives.WriteUInt16LittleEndian(Buffer.AsSpan(2, 2), value);
+    }
 
     public void Dispose()
     {
-        bufferOwner.Dispose();
+        ArrayPool<byte>.Shared.Return(Buffer);
     }
 
-    public static Packet CreateData(PacketFlags flags, ReadOnlySpan<byte> payload, byte channelId = 0,
-        ushort sequence = 0)
+    public static Packet Create(PacketType type)
     {
-        var headerSize = GetHeaderSize(PacketType.Data);
-        var totalSize = headerSize + payload.Length;
-        var bufferOwner = MemoryPool<byte>.Shared.Rent(totalSize);
-        var span = bufferOwner.Memory.Span;
+        var buffer = ArrayPool<byte>.Shared.Rent(HeaderLength);
 
-        span[0] = (byte)PacketType.Data;
-        span[1] = (byte)flags;
-        span[2] = channelId;
-        BinaryPrimitives.WriteUInt16LittleEndian(span.Slice(3, 2), sequence);
-
-        payload.CopyTo(span[headerSize..]);
-
-        return new Packet(bufferOwner, totalSize);
+        return new Packet(buffer, HeaderLength)
+        {
+            Type = type
+        };
     }
 
-    public static Packet Create(PacketType type, int payloadSize = 0)
+    public static Packet CreateAlloc(PacketType type, int length)
     {
-        var headerSize = GetHeaderSize(type);
-        var totalSize = headerSize + payloadSize;
-        var bufferOwner = MemoryPool<byte>.Shared.Rent(totalSize);
-        var span = bufferOwner.Memory.Span;
+        var totalLength = HeaderLength + length;
+        var buffer = new byte[totalLength];
 
-        span[0] = (byte)type;
-
-        return new Packet(bufferOwner, totalSize);
+        return new Packet(buffer, totalLength)
+        {
+            Type = type
+        };
     }
 
-    public static Packet CreateConnectRequest(string key)
+    public static Packet CreateConnectionRequest(string key)
     {
-        var payloadSize = Encoding.UTF8.GetByteCount(key) + 2;
-        var packet = Create(PacketType.ConnectRequest, payloadSize);
+        var keyLength = Encoding.UTF8.GetByteCount(key) + 2;
+        var length = HeaderLength + keyLength;
+        var buffer = ArrayPool<byte>.Shared.Rent(length);
+
+        var packet = new Packet(buffer, length)
+        {
+            Type = PacketType.ConnectionRequest
+        };
+
         packet.Writer.WriteString(key);
 
         return packet;
     }
 
-    public static Packet CreateAck(byte channelId, ushort sequence)
+    public static Packet CreateChannel(byte channelId, ushort sequence, ReadOnlySpan<byte> payload)
     {
-        var headerSize = GetHeaderSize(PacketType.Ack);
-        var bufferOwner = MemoryPool<byte>.Shared.Rent(headerSize);
-        var span = bufferOwner.Memory.Span;
+        var length = HeaderLength + payload.Length;
+        var buffer = ArrayPool<byte>.Shared.Rent(length);
 
-        span[0] = (byte)PacketType.Ack;
-        span[1] = (byte)PacketFlags.None;
-        span[2] = channelId;
-        BinaryPrimitives.WriteUInt16LittleEndian(span.Slice(3, 2), sequence);
+        payload.CopyTo(buffer.AsSpan(HeaderLength));
 
-        return new Packet(bufferOwner, headerSize);
+        return new Packet(buffer, length)
+        {
+            Type = PacketType.Channel,
+            ChannelId = channelId,
+            Sequence = sequence
+        };
     }
 
-    private static int GetHeaderSize(PacketType type)
+    public static Packet CreateAck(byte channelId, ushort sequence)
     {
-        return type switch
+        var buffer = ArrayPool<byte>.Shared.Rent(HeaderLength);
+
+        return new Packet(buffer, HeaderLength)
         {
-            PacketType.Data => 6,
-            PacketType.Ack => 6,
-            _ => 1
+            Type = PacketType.Ack,
+            ChannelId = channelId,
+            Sequence = sequence
         };
     }
 }
 
-internal enum PacketType : byte
+public enum PacketType : byte
 {
-    ConnectRequest,
-    ConnectAccept,
-    ConnectReject,
-    Disconnect,
+    ConnectionRequest,
+    ConnectionAccept,
+    ConnectionReject,
+    Channel,
+    Ack,
     Ping,
     Pong,
-    Data,
-    Ack
-}
-
-[Flags]
-internal enum PacketFlags : byte
-{
-    None = 0,
-    Reliable = 1 >> 0,
-    Ordered = 1 << 1,
-    Sequenced = 1 << 2
+    Close
 }

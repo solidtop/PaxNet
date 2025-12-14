@@ -1,6 +1,6 @@
 namespace PaxNet;
 
-public sealed class ConnectionRequest
+public class ConnectionRequest
 {
     private readonly Connection _connection;
     private readonly Packet _packet;
@@ -12,8 +12,6 @@ public sealed class ConnectionRequest
         _packet = packet;
     }
 
-    public PacketReader Reader => _packet.Reader;
-
     public void Accept()
     {
         if (_resolved) return;
@@ -21,8 +19,8 @@ public sealed class ConnectionRequest
         _connection.Accept();
         _packet.Dispose();
 
-        using var acceptPacket = Packet.Create(PacketType.ConnectAccept);
-        _connection.Send(acceptPacket.Data);
+        using var acceptPacket = Packet.Create(PacketType.ConnectionAccept);
+        _connection.SendCore(acceptPacket.Data);
     }
 
     public void Reject()
@@ -32,8 +30,8 @@ public sealed class ConnectionRequest
         _connection.Reject();
         _packet.Dispose();
 
-        using var rejectPacket = Packet.Create(PacketType.ConnectReject);
-        _connection.Send(rejectPacket.Data);
+        using var rejectPacket = Packet.Create(PacketType.ConnectionReject);
+        _connection.SendCore(rejectPacket.Data);
     }
 
     public void AcceptIfKey(string key)
